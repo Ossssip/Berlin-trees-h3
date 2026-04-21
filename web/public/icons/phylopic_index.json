@@ -1,0 +1,106 @@
+{
+  "acer": {
+    "credit": "T. Michael Keesey",
+    "license": "https://creativecommons.org/licenses/by-sa/3.0/"
+  },
+  "tilia": {
+    "credit": "Pablo Castro Sánchez-Bermejo",
+    "license": "https://creativecommons.org/publicdomain/zero/1.0/"
+  },
+  "quercus": {
+    "credit": "Pablo Castro Sánchez-Bermejo",
+    "license": "https://creativecommons.org/publicdomain/zero/1.0/"
+  },
+  "robinia": {
+    "credit": "Mattia Menchetti",
+    "license": "https://creativecommons.org/publicdomain/zero/1.0/"
+  },
+  "betula": {
+    "credit": "Pablo Castro Sánchez-Bermejo",
+    "license": "https://creativecommons.org/publicdomain/zero/1.0/"
+  },
+  "aesculus": {
+    "credit": "Pablo Castro Sánchez-Bermejo",
+    "license": "https://creativecommons.org/publicdomain/zero/1.0/"
+  },
+  "platanus": {
+    "credit": "Michele M Tobias",
+    "license": "https://creativecommons.org/licenses/by-nc-sa/3.0/"
+  },
+  "populus": {
+    "credit": "Mason McNair",
+    "license": "https://creativecommons.org/publicdomain/zero/1.0/"
+  },
+  "pinus": {
+    "credit": "Juri Felix",
+    "license": "https://creativecommons.org/publicdomain/zero/1.0/"
+  },
+  "fagus": {
+    "credit": "Ferran Sayol",
+    "license": "https://creativecommons.org/publicdomain/zero/1.0/"
+  },
+  "malus": {
+    "credit": "T. Michael Keesey",
+    "license": "https://creativecommons.org/publicdomain/mark/1.0/"
+  },
+  "fraxinus": {
+    "credit": "Pablo Castro Sánchez-Bermejo",
+    "license": "https://creativecommons.org/publicdomain/zero/1.0/"
+  },
+  "prunus": {
+    "credit": "T. Michael Keesey",
+    "license": "https://creativecommons.org/licenses/by-sa/3.0/"
+  },
+  "alnus": {
+    "credit": "Carlos Galaz-Samaniego",
+    "license": "https://creativecommons.org/publicdomain/zero/1.0/"
+  },
+  "pseudotsuga": {
+    "credit": "Michele M Tobias",
+    "license": "https://creativecommons.org/licenses/by-nc-sa/3.0/"
+  },
+  "sorbus": {
+    "credit": "Pablo Castro Sánchez-Bermejo",
+    "license": "https://creativecommons.org/publicdomain/zero/1.0/"
+  },
+  "picea": {
+    "credit": "Guillaume Dera",
+    "license": "https://creativecommons.org/publicdomain/zero/1.0/"
+  },
+  "ginkgo": {
+    "credit": "T. Michael Keesey",
+    "license": "https://creativecommons.org/licenses/by-sa/3.0/"
+  },
+  "liquidambar": {
+    "credit": "Andy Wilson",
+    "license": "https://creativecommons.org/publicdomain/zero/1.0/"
+  },
+  "magnolia": {
+    "credit": "Luna Luisa Sánchez Reyes",
+    "license": "https://creativecommons.org/publicdomain/zero/1.0/"
+  },
+  "thuja": {
+    "credit": "Guillaume Dera",
+    "license": "https://creativecommons.org/publicdomain/zero/1.0/"
+  },
+  "tetradium": {
+    "credit": "Kelsey Wood",
+    "license": "https://creativecommons.org/publicdomain/zero/1.0/"
+  },
+  "morus": {
+    "credit": "Raju Mondal",
+    "license": "https://creativecommons.org/licenses/by/4.0/"
+  },
+  "juniperus": {
+    "credit": "Andy Wilson",
+    "license": "https://creativecommons.org/publicdomain/zero/1.0/"
+  },
+  "cornus": {
+    "credit": "Gabriela Palomo-Munoz",
+    "license": "https://creativecommons.org/licenses/by/4.0/"
+  },
+  "abies": {
+    "credit": "Ferran Sayol",
+    "license": "https://creativecommons.org/publicdomain/zero/1.0/"
+  }
+}
