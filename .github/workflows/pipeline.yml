@@ -68,11 +68,14 @@ jobs:
           cd /tmp/tippecanoe && make -j$(nproc) && sudo make install
           tippecanoe --version
 
+      - name: Initialise DVC
+        run: dvc init --no-scm
+
       - name: Restore DVC cache
         uses: actions/cache@v4
         with:
           path: .dvc/cache
-          key: dvc-${{ hashFiles('dvc.lock') }}
+          key: dvc-${{ hashFiles('dvc.lock', 'dvc.yaml') }}
           restore-keys: dvc-
 
       - name: Run pipeline

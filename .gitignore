@@ -7,7 +7,6 @@ data/processed/
 data/tiles_input/
 data/icon_curation/
 data/berlin_trees.duckdb
-dvc.lock
 
 # dbt compiled artifacts
 dbt/target/
