@@ -176,6 +176,9 @@ def main() -> None:
 
     if error_any:
         sys.exit(2)
+    # In --update mode the pipeline already ran; exit 0 so CI doesn't fail.
+    if args.update:
+        sys.exit(0)
     sys.exit(1 if changed_any else 0)
 
 

@@ -81,6 +81,13 @@ jobs:
       - name: Run pipeline
         run: dvc repro
 
+      - name: Save DVC cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .dvc/cache
+          key: dvc-${{ hashFiles('dvc.lock', 'dvc.yaml') }}
+
       - name: Update checksums
         run: python pipeline/check_updates.py --update
 
