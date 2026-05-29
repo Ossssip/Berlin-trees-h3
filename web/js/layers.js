@@ -330,6 +330,17 @@ export function addMapLayers(map, tilesUrl) {
     paint: { 'line-color': '#fff', 'line-width': 1.8, 'line-opacity': 0.5 },
   });
 
+  // Hidden layer — loads the agg_berlin source layer into the tile cache
+  // so querySourceFeatures can read the city-wide summary stats.
+  map.addLayer({
+    id: 'berlin-summary',
+    type: 'fill',
+    source: 'berlin-trees',
+    'source-layer': 'agg_berlin',
+    layout: { visibility: 'none' },
+    paint: { 'fill-opacity': 0 },
+  });
+
   map.addLayer({
     id: 'trees-circle',
     type: 'circle',
@@ -346,8 +357,7 @@ export function addMapLayers(map, tilesUrl) {
 
   // Selection highlight layers — solid thick outline on click-to-pin.
   const SELECTED_PAINT = { 'line-color': '#fff', 'line-width': 3, 'line-opacity': 0.9 };
-  // Hover highlight layers — lighter outline on mouseover.
-  const HOVER_PAINT = { 'line-color': '#fff', 'line-width': 1.5, 'line-opacity': 0.4 };
+  const HOVER_PAINT    = { 'line-color': '#fff', 'line-width': 3, 'line-opacity': 0.9 };
 
   for (const resolution of HEX_RESOLUTIONS) {
     map.addLayer({
@@ -355,7 +365,7 @@ export function addMapLayers(map, tilesUrl) {
       type: 'line',
       source: 'berlin-trees',
       'source-layer': `hexes_res${resolution}`,
-      filter: ['==', ['get', 'h3_index_str'], ''],
+      filter: ['==', ['get', 'h3_index'], ''],
       paint: SELECTED_PAINT,
     });
     map.addLayer({
@@ -363,7 +373,7 @@ export function addMapLayers(map, tilesUrl) {
       type: 'line',
       source: 'berlin-trees',
       'source-layer': `hexes_res${resolution}`,
-      filter: ['==', ['get', 'h3_index_str'], ''],
+      filter: ['==', ['get', 'h3_index'], ''],
       paint: HOVER_PAINT,
     });
   }

@@ -29,10 +29,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SOURCES_FILE = REPO_ROOT / "pipeline" / "sources.yml"
 RAW_DIR = REPO_ROOT / "data" / "raw"
 
-PAGE_SIZE = 1000           # features per WFS request
-MAX_RETRIES = 5           # attempts per page before giving up
+PAGE_SIZE = 1000  # features per WFS request
+MAX_RETRIES = 5  # attempts per page before giving up
 RETRY_BACKOFF_BASE = 2.0  # exponential backoff base (seconds)
-REQUEST_TIMEOUT = 60      # seconds
+REQUEST_TIMEOUT = 60  # seconds
 CHECKPOINT_INTERVAL = 100_000  # write .partial.parquet every N features
 
 logging.basicConfig(

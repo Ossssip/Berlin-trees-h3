@@ -18,6 +18,11 @@ export function registerMissingImagePlaceholder(map) {
 }
 
 const _loadingGenera = new Set();
+const _svgDataUris = {};
+
+export function getGenusDataUri(genus) {
+  return _svgDataUris[genus?.toLowerCase()] ?? null;
+}
 
 export async function loadPhylopicIcons(map, index) {
   const size = 64;
@@ -46,6 +51,8 @@ export async function loadPhylopicIcons(map, index) {
             });
           }
         }
+
+        _svgDataUris[genus] = `data:image/svg+xml,${encodeURIComponent(patched)}`;
 
         const blob = new Blob([patched], { type: 'image/svg+xml' });
         const url = URL.createObjectURL(blob);

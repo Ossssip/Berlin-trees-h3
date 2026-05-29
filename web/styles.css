@@ -221,7 +221,7 @@ body { font-family: sans-serif; }
 
 .card-stats {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 4px 10px;
 }
 .card-stats span {

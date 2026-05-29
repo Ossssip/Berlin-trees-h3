@@ -19,3 +19,12 @@ models:
       +materialized: table
     marts:
       +materialized: table
+
+seeds:
+  berlin_trees:
+    forest_ba_codes:
+      +column_types:
+        ba_code: varchar
+        deuts: varchar
+        genus_latin: varchar
+        notes: varchar

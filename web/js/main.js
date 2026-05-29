@@ -19,7 +19,7 @@ const _saved = loadState();
 
 const map = new maplibregl.Map({
   container: 'map',
-  style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+  style: 'https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json',
   center: _saved.center ?? [13.405, 52.52],
   zoom:   _saved.zoom   ?? 10,
   attributionControl: false,
@@ -33,9 +33,10 @@ let phylopicIndex = {};
 const getPhylopicIndex = () => phylopicIndex;
 
 map.on('load', () => {
-  const TILES_RELEASE_URL = 'https://berlin-trees-pmtiles.ossssip.workers.dev/';
-  const tilesUrl = `pmtiles://${TILES_RELEASE_URL}`;
-  const tilesRawUrl = TILES_RELEASE_URL;
+  // Derive base from this module's URL so the path is correct on GitHub Pages
+  // (window.location.origin alone would lose the /repo-name/ prefix).
+  const _base = new URL('..', import.meta.url).href;
+  const tilesUrl = `pmtiles://${_base}public/berlin_trees.pmtiles`;
 
   addMapLayers(map, tilesUrl);
 
@@ -51,7 +52,7 @@ map.on('load', () => {
 
   const { getActiveMode, setActiveMode, syncToZoom } = createModeController(map);
 
-  setupInfoCard(map, getPhylopicIndex, tilesRawUrl, {
+  setupInfoCard(map, getPhylopicIndex, {
     onLatchChange: (latchState) => saveState({ latched: latchState }),
   });
   if (_saved.forestEnabled === false) setForestEnabled(false);

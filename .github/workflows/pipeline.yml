@@ -228,12 +228,9 @@ jobs:
       - name: Transform
         run: |
           python pipeline/init_db.py
+          dbt seed --profiles-dir ./dbt --project-dir ./dbt
           dbt run --profiles-dir ./dbt --project-dir ./dbt
           dbt test --profiles-dir ./dbt --project-dir ./dbt
-          python pipeline/export_trees.py
-
-      - name: Aggregate
-        run: python pipeline/aggregate_all.py
 
       - name: Build tiles
         run: python pipeline/build_tiles.py

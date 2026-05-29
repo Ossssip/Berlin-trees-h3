@@ -1,20 +1,19 @@
 """
 pipeline/build_tiles.py
 -----------------------
-Convert processed GeoParquet files into a single PMTiles file.
+Convert dbt mart tables in berlin_trees.duckdb into a single PMTiles file.
 
 Strategy: build separate pmtiles files with scoped zoom ranges, then
 merge them with tile-join into one berlin_trees.pmtiles.
 
-    hexes          (h3_res6–9 + admin)           z4–z17   hex/admin layers (all zooms)
-    forests        (forstbetriebskarte.parquet)  z4–z17   forest stand polygons
-    trees          (trees.parquet)               z6–z17   individual tree points
+    hexes          (agg_h3_res6–9 + agg_bezirke/ortsteile)  z4–z17
+    forests        (data/raw/forstbetriebskarte.parquet)     z4–z17
+    trees          (int_trees_unified)                       z6–z17
 
 Run:
     conda run -n berlin_trees python pipeline/build_tiles.py
 """
 
-import json
 import logging
 import shutil
 import subprocess
@@ -26,18 +25,15 @@ from pathlib import Path
 
 import duckdb
 import geopandas as gpd
-import numpy as np
 from shapely.geometry import MultiPolygon, Polygon
 
-PROCESSED = Path("data/processed")
+DB_PATH = Path("data/berlin_trees.duckdb")
 TILES_INPUT = Path("data/tiles_input")
 WEB_PUBLIC = Path("web/public")
 OUT_PMTILES = WEB_PUBLIC / "berlin_trees.pmtiles"
-OUT_SUMMARY = WEB_PUBLIC / "dataset_summary.json"
-ATTRIBUTION = "Senatsverwaltung Berlin, dl-de/by-2-0"
+ATTRIBUTION = "Senatsverwaltung Berlin (dl-de/zero-2-0), Grün Berlin GmbH (dl-de/by-2-0)"
 
 # Columns to retain in the individual-tree layer (keeps tile size down).
-# height_m / crown_diameter_m / district were dropped in Phase 2 transform.
 TREE_COLS = [
     "tree_uuid",
     "species_latin",
@@ -49,19 +45,18 @@ TREE_COLS = [
 ]
 
 # Forest stand columns useful for map popups.
-# The raw parquet has 90 columns (multi-species layer detail); keep the essentials.
 FOREST_COLS = [
     "id",
-    "lage",  # stand location name
-    "bezirk",  # district
-    "betrkl",  # age class (Betriebsklasse)
-    "grpalter",  # stand age group
-    "gis_area",  # area (m²)
-    "s1_1_ba",  # dominant species layer 1 (latin abbreviation)
-    "s1_1_deuts",  # dominant species layer 1 (german)
-    "s1_1_misch",  # mixing proportion (%)
-    "s1_1_bhd",  # diameter at breast height (cm)
-    "s1_1_hoehe",  # height (m)
+    "lage",
+    "bezirk",
+    "betrkl",
+    "grpalter",
+    "gis_area",
+    "s1_1_ba",
+    "s1_1_deuts",
+    "s1_1_misch",
+    "s1_1_bhd",
+    "s1_1_hoehe",
 ]
 
 RAW = Path("data/raw")
@@ -100,14 +95,13 @@ def _timed(label: str):
         log.info("%s finished in %.1fs", label, time.perf_counter() - start)
 
 
-def _quote(path: Path) -> str:
+def _quote(path) -> str:
     return str(path).replace("'", "''")
 
 
 def _is_fresh(output_path: Path, input_paths: list[Path]) -> bool:
     if not output_path.exists():
         return False
-
     out_mtime = output_path.stat().st_mtime
     for input_path in input_paths:
         if not input_path.exists():
@@ -115,149 +109,6 @@ def _is_fresh(output_path: Path, input_paths: list[Path]) -> bool:
         if input_path.stat().st_mtime > out_mtime:
             return False
     return True
-
-
-def _parquet_columns(con: duckdb.DuckDBPyConnection, parquet_path: Path) -> list[str]:
-    query = f"DESCRIBE SELECT * FROM read_parquet('{_quote(parquet_path)}')"
-    return [row[0] for row in con.execute(query).fetchall()]
-
-
-def write_dataset_summary(
-    con: duckdb.DuckDBPyConnection,
-    out_path: Path,
-    input_paths: list[Path],
-) -> None:
-    if _is_fresh(out_path, input_paths):
-        log.info("Skipping dataset summary → %s (cached)", out_path.name)
-        return
-
-    log.info("Building dataset summary → %s", out_path.name)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-
-    trees_path = PROCESSED / "trees.parquet"
-    admin_path = PROCESSED / "admin_bezirke.parquet"
-
-    tree_count, genus_count = con.execute(
-        f"""
-        SELECT
-            COUNT(*) AS tree_count,
-            COUNT(DISTINCT genus) AS genus_count
-        FROM (
-            SELECT COALESCE(
-                NULLIF(NULLIF(LOWER(TRIM(genus_latin)), ''), 'unbekannt'),
-                NULLIF(LOWER(SPLIT_PART(TRIM(species_latin), ' ', 1)), '')
-            ) AS genus
-            FROM read_parquet('{_quote(trees_path)}')
-        )
-        """
-    ).fetchone()
-
-    top_genera = [
-        {"genus": genus, "count": count, "share": share}
-        for genus, count, share in con.execute(
-            f"""
-            WITH genus_counts AS (
-                SELECT
-                    COALESCE(
-                        NULLIF(NULLIF(LOWER(TRIM(genus_latin)), ''), 'unbekannt'),
-                        NULLIF(LOWER(SPLIT_PART(TRIM(species_latin), ' ', 1)), '')
-                    ) AS genus,
-                    COUNT(*) AS genus_count
-                FROM read_parquet('{_quote(trees_path)}')
-                WHERE COALESCE(
-                    NULLIF(NULLIF(LOWER(TRIM(genus_latin)), ''), 'unbekannt'),
-                    NULLIF(LOWER(SPLIT_PART(TRIM(species_latin), ' ', 1)), '')
-                ) IS NOT NULL
-                GROUP BY 1
-            )
-            SELECT
-                genus,
-                genus_count,
-                ROUND(genus_count * 100.0 / SUM(genus_count) OVER (), 1) AS genus_share
-            FROM genus_counts
-            WHERE genus != ''
-            ORDER BY genus_count DESC, genus ASC
-            LIMIT 10
-            """
-        ).fetchall()
-    ]
-
-    top_genera_total_share = sum(g["share"] for g in top_genera)
-    top_genera_other_count = tree_count - sum(g["count"] for g in top_genera)
-    top_genera_other_share = round(max(0.0, 100.0 - top_genera_total_share), 1)
-
-    source_rows = con.execute(
-        f"""
-        SELECT source, COUNT(*) AS n
-        FROM read_parquet('{_quote(trees_path)}')
-        GROUP BY source
-        ORDER BY n DESC, source ASC
-        """
-    ).fetchall()
-
-    berlin_area_km2, forest_area_km2, non_forest_area_km2, district_count = con.execute(
-        f"""
-        SELECT
-            ROUND(SUM(berlin_area_km2), 2) AS berlin_area_km2,
-            ROUND(SUM(forest_area_km2), 2) AS forest_area_km2,
-            ROUND(SUM(non_forest_area_km2), 2) AS non_forest_area_km2,
-            COUNT(*) AS district_count
-        FROM read_parquet('{_quote(admin_path)}')
-        """
-    ).fetchone()
-
-    subdistrict_count = con.execute(
-        f"SELECT COUNT(*) FROM read_parquet('{_quote(PROCESSED / 'admin_ortsteile.parquet')}')"
-    ).fetchone()[0]
-
-    density_ranges = {}
-    for res in [6, 7, 8, 9]:
-        p = PROCESSED / f"h3_res{res}.parquet"
-        if p.exists():
-            import pandas as pd
-
-            d = pd.read_parquet(p)["tree_density_km2"].dropna()
-            density_ranges[f"res{res}"] = {
-                "p50": int(np.percentile(d, 50)),
-                "p95": int(np.percentile(d, 95)),
-            }
-    for admin in ["bezirke", "ortsteile"]:
-        p = PROCESSED / f"admin_{admin}.parquet"
-        if p.exists():
-            import pandas as pd
-
-            d = pd.read_parquet(p)["tree_density_km2"].dropna()
-            density_ranges[admin] = {
-                "p50": int(np.percentile(d, 50)),
-                "p95": int(np.percentile(d, 95)),
-            }
-
-    summary = {
-        "tree_count": int(tree_count),
-        "genus_count": int(genus_count),
-        "district_count": int(district_count),
-        "subdistrict_count": int(subdistrict_count),
-        "berlin_area_km2": float(berlin_area_km2),
-        "forest_area_km2": float(forest_area_km2),
-        "non_forest_area_km2": float(non_forest_area_km2),
-        "forest_cover_pct": round((forest_area_km2 / berlin_area_km2 * 100.0), 1)
-        if berlin_area_km2
-        else 0.0,
-        "tree_density_km2": round((tree_count / non_forest_area_km2), 1)
-        if non_forest_area_km2
-        else None,
-        "sources": [{"source": source, "count": int(count)} for source, count in source_rows],
-        "top_genera": top_genera,
-        "top_genera_other_count": int(top_genera_other_count),
-        "top_genera_other_share": top_genera_other_share,
-        "density_ranges": density_ranges,
-        "notes": {
-            "density": "Registered trees per non-forest km²",
-            "forest": "Forest share from clipped forest-stand polygons",
-        },
-    }
-
-    out_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
 
 def _copy_query_to_flatgeobuf(
@@ -285,31 +136,48 @@ def _copy_query_to_flatgeobuf(
     log.info("  %.1f MB", mb)
 
 
-def parquet_to_flatgeobuf(
+def _col_projection(col_defs: list[tuple], exclude: set[str], geom_expr: str) -> str:
+    """Build a SELECT projection, casting HUGEINT → BIGINT (FlatGeobuf supports ≤64-bit ints)."""
+    parts = []
+    for name, dtype in col_defs:
+        if name in exclude:
+            continue
+        if dtype == "HUGEINT":
+            parts.append(f"CAST({name} AS BIGINT) AS {name}")
+        else:
+            parts.append(name)
+    parts.append(geom_expr)
+    return ", ".join(parts)
+
+
+def table_to_flatgeobuf(
     con: duckdb.DuckDBPyConnection,
-    parquet_path: Path,
+    table: str,
     out_path: Path,
     cols: list[str] | None = None,
 ) -> None:
-    available = _parquet_columns(con, parquet_path)
-    selected = cols if cols else [col for col in available if col != "geometry"]
-    keep = [col for col in selected if col in available and col != "geometry"]
-    projection = ", ".join(keep + ["geometry"])
-    select_sql = f"SELECT {projection} FROM read_parquet('{_quote(parquet_path)}')"
-    _copy_query_to_flatgeobuf(con, out_path, [parquet_path], select_sql, parquet_path.name)
+    col_defs = con.execute(f"DESCRIBE {table}").fetchall()
+    if cols:
+        col_set = set(cols)
+        col_defs = [(n, t) for n, t, *_ in col_defs if n in col_set and n != "geometry"]
+    else:
+        col_defs = [(n, t) for n, t, *_ in col_defs if n != "geometry"]
+    projection = _col_projection(col_defs, set(), "geometry")
+    select_sql = f"SELECT {projection} FROM {table}"
+    _copy_query_to_flatgeobuf(con, out_path, [DB_PATH], select_sql, table)
 
 
-def centroid_parquet_to_flatgeobuf(
+def table_centroids_to_flatgeobuf(
     con: duckdb.DuckDBPyConnection,
-    parquet_path: Path,
+    table: str,
     out_path: Path,
 ) -> None:
-    columns = [col for col in _parquet_columns(con, parquet_path) if col != "geometry"]
-    projection = ", ".join(columns + ["ST_Centroid(geometry) AS geometry"])
-    select_sql = f"SELECT {projection} FROM read_parquet('{_quote(parquet_path)}')"
-    _copy_query_to_flatgeobuf(
-        con, out_path, [parquet_path], select_sql, f"{parquet_path.name} centroids"
-    )
+    col_defs = [
+        (n, t) for n, t, *_ in con.execute(f"DESCRIBE {table}").fetchall() if n != "geometry"
+    ]
+    projection = _col_projection(col_defs, set(), "ST_Centroid(geometry) AS geometry")
+    select_sql = f"SELECT {projection} FROM {table}"
+    _copy_query_to_flatgeobuf(con, out_path, [DB_PATH], select_sql, f"{table} centroids")
 
 
 def geopandas_to_vector(
@@ -353,11 +221,6 @@ def tippecanoe(
     extra: list[str] | None = None,
     read_parallel: bool = False,
 ) -> None:
-    """Run tippecanoe for one zoom band.
-
-    layers: [(layer_name, vector_path), ...]  — multiple entries with the same
-            name are merged into one vector layer by tippecanoe.
-    """
     cmd = [
         "tippecanoe",
         "--output",
@@ -377,30 +240,6 @@ def tippecanoe(
         _run(cmd)
 
 
-def _inject_summary_into_pmtiles(pmtiles_path: Path, summary_path: Path) -> None:
-    """Inject dataset_summary JSON into the PMTiles metadata block."""
-    tmp = pmtiles_path.with_suffix(".meta.json")
-    try:
-        result = subprocess.run(
-            ["pmtiles", "show", "--metadata", str(pmtiles_path)],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        meta = json.loads(result.stdout)
-        meta["dataset_summary"] = json.loads(summary_path.read_text(encoding="utf-8"))
-        tmp.write_text(json.dumps(meta), encoding="utf-8")
-        subprocess.run(
-            ["pmtiles", "edit", f"--metadata={tmp}", str(pmtiles_path)],
-            capture_output=True,
-            check=True,
-        )
-        log.info("Injected dataset_summary into PMTiles metadata")
-    except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        log.warning("Could not inject metadata into PMTiles: %s", e)
-    finally:
-        tmp.unlink(missing_ok=True)
-
 
 # ---------------------------------------------------------------------------
 # Main
@@ -410,68 +249,53 @@ def _inject_summary_into_pmtiles(pmtiles_path: Path, summary_path: Path) -> None
 def main() -> None:
     TILES_INPUT.mkdir(parents=True, exist_ok=True)
     WEB_PUBLIC.mkdir(parents=True, exist_ok=True)
-    con = duckdb.connect()
-    con.execute("LOAD spatial")
 
-    write_dataset_summary(
-        con,
-        OUT_SUMMARY,
-        [
-            PROCESSED / "trees.parquet",
-            PROCESSED / "admin_bezirke.parquet",
-            PROCESSED / "admin_ortsteile.parquet",
-        ],
-    )
+    con = duckdb.connect(str(DB_PATH), read_only=True)
+    con.execute("LOAD spatial; LOAD h3;")
 
-    # --- 1. Parquet → vector export -------------------------------------------
+    # --- 1. DuckDB mart tables → FlatGeobuf -----------------------------------
+
     for res in [6, 7, 8, 9]:
-        parquet_to_flatgeobuf(
-            con,
-            PROCESSED / f"h3_res{res}.parquet",
-            TILES_INPUT / f"h3_res{res}.fgb",
-        )
+        table_to_flatgeobuf(con, f"agg_h3_res{res}", TILES_INPUT / f"h3_res{res}.fgb")
 
-    # Admin boundary layers: bezirke and ortsteile (written in WGS84 by aggregate_admin.py)
-    parquet_to_flatgeobuf(
-        con,
-        PROCESSED / "admin_bezirke.parquet",
-        TILES_INPUT / "admin_bezirke.fgb",
-    )
-    parquet_to_flatgeobuf(
-        con,
-        PROCESSED / "admin_ortsteile.parquet",
-        TILES_INPUT / "admin_ortsteile.fgb",
-    )
+    table_to_flatgeobuf(con, "agg_bezirke", TILES_INPUT / "admin_bezirke.fgb")
+    table_to_flatgeobuf(con, "agg_ortsteile", TILES_INPUT / "admin_ortsteile.fgb")
+    table_to_flatgeobuf(con, "agg_berlin", TILES_INPUT / "berlin_summary.fgb")
 
-    # Admin centroid point layers — one point per admin area carrying all properties.
-    # Symbol layers use these so each area gets exactly one icon regardless of how
-    # the polygon is clipped across tile boundaries (same fix as hex centroid layers).
     for admin in ["bezirke", "ortsteile"]:
-        centroid_parquet_to_flatgeobuf(
-            con,
-            PROCESSED / f"admin_{admin}.parquet",
-            TILES_INPUT / f"admin_{admin}_centroids.fgb",
+        table_centroids_to_flatgeobuf(
+            con, f"agg_{admin}", TILES_INPUT / f"admin_{admin}_centroids.fgb"
         )
 
-    parquet_to_flatgeobuf(
+    # Individual tree points from int_trees_unified (column subset to keep tiles small)
+    tree_cols_sql = ", ".join(
+        TREE_COLS
+        + ["ST_FlipCoordinates(ST_Transform(geometry, 'EPSG:25833', 'EPSG:4326')) AS geometry"]
+    )
+    _copy_query_to_flatgeobuf(
         con,
-        PROCESSED / "trees.parquet",
         TILES_INPUT / "trees.fgb",
-        cols=TREE_COLS,
+        [DB_PATH],
+        f"SELECT {tree_cols_sql} FROM int_trees_unified",
+        "int_trees_unified",
     )
 
-    # City border: single polygon dissolved from all Bezirke.
-    geopandas_to_vector(
+    # City border: dissolve all Bezirke geometries into one polygon
+    _copy_query_to_flatgeobuf(
+        con,
         TILES_INPUT / "berlin_border.fgb",
-        [PROCESSED / "admin_bezirke.parquet"],
-        lambda: gpd.GeoDataFrame(
-            geometry=gpd.GeoSeries(
-                [gpd.read_parquet(PROCESSED / "admin_bezirke.parquet").union_all()],
-                crs="EPSG:4326",
-            )
-        ),
+        [DB_PATH],
+        "SELECT ST_Union_Agg(geometry) AS geometry FROM agg_bezirke",
         "Berlin city border",
     )
+
+    # Hex centroid point layers
+    for res in [6, 7, 8, 9]:
+        table_centroids_to_flatgeobuf(
+            con, f"agg_h3_res{res}", TILES_INPUT / f"h3_res{res}_centroids.fgb"
+        )
+
+    # --- 2. Forest layers (geopandas — morphological buffer/union) ------------
 
     forest_inputs = [RAW / "forstbetriebskarte.parquet", RAW / "alkis_ortsteile.parquet"]
     forests_out = TILES_INPUT / "forests.geojson"
@@ -481,13 +305,10 @@ def main() -> None:
     )
     city_boundary = None
     if need_city_boundary:
-        # City boundary: dissolve all Ortsteile polygons into one polygon (EPSG:25833).
-        # Used to clip forest layers so they don't bleed past the administrative border.
         log.info("Building city boundary ...")
         gdf_ortsteile = gpd.read_parquet(RAW / "alkis_ortsteile.parquet")
-        city_boundary = gdf_ortsteile.union_all()  # already EPSG:25833
+        city_boundary = gdf_ortsteile.union_all()
 
-    # Forest individual stands: clip raw polygons to city boundary before export.
     geopandas_to_vector(
         forests_out,
         forest_inputs,
@@ -500,9 +321,6 @@ def main() -> None:
         driver="GeoJSON",
     )
 
-    # Forest union: morphological closing (buffer +50 m → merge → buffer −50 m)
-    # merges stands within ~100 m of each other and smooths jagged edges.
-    # Result is then intersected with city boundary to remove any buffer overshoot.
     geopandas_to_vector(
         forests_union_out,
         forest_inputs,
@@ -524,18 +342,7 @@ def main() -> None:
         driver="GeoJSON",
     )
 
-    # Centroid point layers: one point per hex, carrying all hex properties.
-    # Symbol layers in MapLibre use these instead of the polygon layer so each
-    # hex gets exactly one symbol — polygon features clipped across tile
-    # boundaries generate multiple centroids, causing duplicate icons.
-    for res in [6, 7, 8, 9]:
-        centroid_parquet_to_flatgeobuf(
-            con,
-            PROCESSED / f"h3_res{res}.parquet",
-            TILES_INPUT / f"h3_res{res}_centroids.fgb",
-        )
-
-    # --- 2. tippecanoe: all bands in parallel ---------------------------------
+    # --- 3. tippecanoe: all bands in parallel ---------------------------------
     tmp_dir = Path(tempfile.mkdtemp(prefix="bt_tiles_", dir="/dev/shm"))
     try:
         hexes_pmtiles = tmp_dir / "hexes.pmtiles"
@@ -545,9 +352,6 @@ def main() -> None:
         forests_pmtiles = tmp_dir / "forests.pmtiles"
         trees_pmtiles = tmp_dir / "trees.pmtiles"
 
-        # Each job is independent — different inputs, different output paths, all
-        # writing to /dev/shm. ThreadPoolExecutor is sufficient because each job
-        # is a subprocess (tippecanoe), so there is no GIL contention.
         tippecanoe_jobs = {
             "hexes": lambda: tippecanoe(
                 hexes_pmtiles,
@@ -556,7 +360,7 @@ def main() -> None:
                 layers=[
                     (f"hexes_res{res}", TILES_INPUT / f"h3_res{res}.fgb") for res in [6, 7, 8, 9]
                 ],
-                extra=["--no-tile-size-limit"],
+                extra=["--no-tile-size-limit", "--no-tile-stats"],
                 read_parallel=True,
             ),
             "hex_centroids": lambda: tippecanoe(
@@ -567,7 +371,7 @@ def main() -> None:
                     (f"hexes_res{res}_centroids", TILES_INPUT / f"h3_res{res}_centroids.fgb")
                     for res in [6, 7, 8, 9]
                 ],
-                extra=["--no-feature-limit", "--no-tile-size-limit", "--drop-rate=0"],
+                extra=["--no-feature-limit", "--no-tile-size-limit", "--drop-rate=0", "--no-tile-stats"],
                 read_parallel=True,
             ),
             "admin": lambda: tippecanoe(
@@ -578,8 +382,9 @@ def main() -> None:
                     ("admin_bezirke", TILES_INPUT / "admin_bezirke.fgb"),
                     ("admin_ortsteile", TILES_INPUT / "admin_ortsteile.fgb"),
                     ("berlin_border", TILES_INPUT / "berlin_border.fgb"),
+                    ("agg_berlin", TILES_INPUT / "berlin_summary.fgb"),
                 ],
-                extra=["--no-tile-size-limit", "--no-simplification-of-shared-nodes"],
+                extra=["--no-tile-size-limit", "--no-simplification-of-shared-nodes", "--no-tile-stats"],
                 read_parallel=True,
             ),
             "admin_centroids": lambda: tippecanoe(
@@ -590,7 +395,7 @@ def main() -> None:
                     ("admin_bezirke_centroids", TILES_INPUT / "admin_bezirke_centroids.fgb"),
                     ("admin_ortsteile_centroids", TILES_INPUT / "admin_ortsteile_centroids.fgb"),
                 ],
-                extra=["--no-feature-limit", "--no-tile-size-limit", "--drop-rate=0"],
+                extra=["--no-feature-limit", "--no-tile-size-limit", "--drop-rate=0", "--no-tile-stats"],
                 read_parallel=True,
             ),
             "forests": lambda: tippecanoe(
@@ -601,7 +406,7 @@ def main() -> None:
                     ("forests", forests_out),
                     ("forests_union", forests_union_out),
                 ],
-                extra=["--no-tile-size-limit", "--no-simplification-of-shared-nodes"],
+                extra=["--no-tile-size-limit", "--no-simplification-of-shared-nodes", "--no-tile-stats"],
                 read_parallel=True,
             ),
             "trees": lambda: tippecanoe(
@@ -609,7 +414,7 @@ def main() -> None:
                 min_zoom=6,
                 max_zoom=17,
                 layers=[("trees", TILES_INPUT / "trees.fgb")],
-                extra=["--no-tile-size-limit", "--drop-densest-as-needed"],
+                extra=["--no-tile-size-limit", "--drop-densest-as-needed", "--no-tile-stats"],
                 read_parallel=True,
             ),
         }
@@ -627,7 +432,9 @@ def main() -> None:
                 except Exception as exc:
                     raise RuntimeError(f"tippecanoe job '{name}' failed") from exc
 
-        # --- 3. tile-join: merge all bands into one pmtiles -------------------
+        # Fix capitalised Null in tippecanoe JSON metadata before tile-join reads it
+
+        # --- 4. tile-join: merge all bands into one pmtiles -------------------
         assembled_pmtiles = tmp_dir / OUT_PMTILES.name
         log.info("Merging with tile-join in tmpfs → %s", assembled_pmtiles)
         with _timed("tile-join berlin_trees.pmtiles"):
@@ -649,10 +456,6 @@ def main() -> None:
                 ]
             )
 
-        # Inject dataset_summary (including density_ranges) into PMTiles metadata.
-        # Saves one HTTP request — the web app reads it via p.getMetadata().
-        _inject_summary_into_pmtiles(assembled_pmtiles, OUT_SUMMARY)
-
         final_copy_tmp = OUT_PMTILES.with_name(f"{OUT_PMTILES.name}.tmp")
         with _timed(f"Copy final PMTiles to {OUT_PMTILES}"):
             WEB_PUBLIC.mkdir(parents=True, exist_ok=True)
@@ -664,7 +467,7 @@ def main() -> None:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         con.close()
 
-    # --- 4. Validate ----------------------------------------------------------
+    # --- 5. Validate ----------------------------------------------------------
     mb = OUT_PMTILES.stat().st_size / 1024 / 1024
     log.info("Output: %s  (%.1f MB)", OUT_PMTILES, mb)
     if mb > 200:
