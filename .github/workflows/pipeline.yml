@@ -23,8 +23,6 @@ on:
 
 permissions:
   contents: write   # push checksums commit + upload release assets
-  pages: write      # deploy to GitHub Pages
-  id-token: write   # OIDC token for Pages deployment
 
 jobs:
 
@@ -415,33 +413,3 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload web/ for deploy job
-        uses: actions/upload-artifact@v7
-        with:
-          name: web
-          path: web/
-          retention-days: 1
-
-  # ── Job 5: GitHub Pages deploy ───────────────────────────────────────────────
-  deploy:
-    needs: tiles
-    if: always() && needs.tiles.result == 'success'
-    runs-on: ubuntu-latest
-    concurrency:
-      group: pages
-      cancel-in-progress: false
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          name: web
-          path: web/
-
-      - uses: actions/upload-pages-artifact@v5
-        with:
-          path: web/
-
-      - id: deployment
-        uses: actions/deploy-pages@v5
