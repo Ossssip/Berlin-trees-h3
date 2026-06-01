@@ -1,7 +1,6 @@
 # Data Sources
 
-All spatial datasets are fetched from public WFS endpoints hosted by the Berlin Senate
-Administration (Geoportal Berlin / GDI-BE) or govdata.de.
+All spatial datasets are fetched from public WFS endpoints hosted on the Geoportal Berlin.
 
 ---
 
@@ -42,7 +41,7 @@ Bezirke are derived by dissolving Ortsteile on the `bezirk` attribute — no sep
 ## Tree silhouettes
 
 Silhouettes are fetched at build time from [PhyloPic](https://www.phylopic.org) via the v2 API
-and stored in `web/public/icons/`. 26 genera have silhouettes; the rest use a letter fallback.
+and stored in `web/public/icons/`. Some images are simplified and optimized. 26 genera have silhouettes; the rest use a letter fallback.
 
 | Genus | Contributor | License |
 |---|---|---|

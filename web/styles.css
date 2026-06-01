@@ -100,6 +100,7 @@ body { font-family: sans-serif; }
   display: inline-flex;
   flex-direction: column;
   align-items: center;
+  justify-content: flex-end;
   gap: 7px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -110,13 +111,14 @@ body { font-family: sans-serif; }
   transition: color 0.15s, background 0.15s, border-color 0.15s;
   flex-shrink: 0;
 }
-.forest-toggle-btn.active { color: #4477cc; border-color: rgba(68,119,204,0.35); background: rgba(68,119,204,0.1); }
+.forest-toggle-btn.active { color: #4a9e54; border-color: rgba(74,158,84,0.4); background: rgba(74,158,84,0.12); }
+.forest-toggle-btn.active .forest-toggle-label { color: #fff; }
 .forest-toggle-btn:hover { color: #fff; background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.16); }
 .forest-toggle-label { font-size: 13px; letter-spacing: 0.02em; }
 
 .seg-track {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   background: rgba(255, 255, 255, 0.07);
   border-radius: 20px;
   padding: 3px;
@@ -139,7 +141,7 @@ body { font-family: sans-serif; }
   cursor: pointer;
   color: #777;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
   padding: 5px 7px;
   border-radius: 14px;
@@ -236,7 +238,7 @@ body { font-family: sans-serif; }
   border-top: 1px solid rgba(255,255,255,0.07);
   padding-top: 7px;
 }
-.card-forest { border-top-color: rgba(34,85,170,0.3); }
+.card-forest { border-top-color: rgba(42,94,48,0.35); }
 
 .card-section-title {
   font-size: 12px;
@@ -250,8 +252,8 @@ body { font-family: sans-serif; }
 
 .fcp-badge {
   font-size: 9px;
-  background: rgba(34,85,170,0.25);
-  color: #6699dd;
+  background: rgba(42,94,48,0.28);
+  color: #7fb583;
   border-radius: 4px;
   padding: 1px 5px;
   text-transform: none;
@@ -273,7 +275,7 @@ body { font-family: sans-serif; }
   flex-shrink: 0;
 }
 .bar-name { font-size: 13px; color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bar-forest .bar-name { color: #7799cc; }
+.bar-forest .bar-name { color: #fff; }
 .bar-track {
   flex: 1;
   height: 6px;
@@ -287,7 +289,7 @@ body { font-family: sans-serif; }
   border-radius: 3px;
   min-width: 2px;
 }
-.bar-fill-forest { background: #2255aa; }
+.bar-fill-forest { background: #2a5e30; }
 .bar-pct { font-size: 12px; color: #888; width: 44px; text-align: right; flex-shrink: 0; }
 .bar-count { font-size: 11px; color: #666; display: block; }
 .bar-other .bar-name { color: #666; }

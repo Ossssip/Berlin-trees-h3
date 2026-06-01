@@ -2,7 +2,7 @@ import { setupControls } from './controls.js';
 import { registerMissingImagePlaceholder, loadPhylopicIcons, loadPhylopicIndex } from './icons.js';
 import { addMapLayers, updateGenusLabelFilter } from './layers.js';
 import { createModeController } from './mode.js';
-import { setupInfoCard, updateColorbar, clearSelection, restoreLatched, setForestEnabled } from './info.js';
+import { setupInfoCard, updateColorbar, clearSelection, setForestEnabled } from './info.js';
 import { loadState, saveState } from './mapState.js';
 
 const protocol = new pmtiles.Protocol();
@@ -20,8 +20,8 @@ const _saved = loadState();
 const map = new maplibregl.Map({
   container: 'map',
   style: 'https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json',
-  center: _saved.center ?? [13.405, 52.52],
-  zoom:   _saved.zoom   ?? 10,
+  center: [13.405, 52.52],
+  zoom:   10.6,
   attributionControl: false,
 });
 
@@ -62,7 +62,7 @@ map.on('load', () => {
   }
 
   setupControls(map, setActiveMode, getActiveMode, onModeChange, {
-    mode: _saved.mode,
+    mode: 'auto',
     forestEnabled: _saved.forestEnabled,
     onForestChange: (enabled) => { saveState({ forestEnabled: enabled }); setForestEnabled(enabled); },
   });
@@ -74,12 +74,6 @@ map.on('load', () => {
   });
 
   map.on('zoom', syncToZoom);
-
-  // Restore latched selection after tiles have had a chance to load
-  if (_saved.latched) {
-    const { layerId, props, type } = _saved.latched;
-    map.once('idle', () => restoreLatched(layerId, props, type));
-  }
 
   // Show attribution expanded on load, auto-collapse after 10s
   const attrEl = document.querySelector('.maplibregl-ctrl-attrib');

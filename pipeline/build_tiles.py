@@ -188,7 +188,6 @@ def tippecanoe(
         _run(cmd)
 
 
-
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -277,7 +276,12 @@ def main() -> None:
                     (f"hexes_res{res}_centroids", TILES_INPUT / f"h3_res{res}_centroids.fgb")
                     for res in [6, 7, 8, 9]
                 ],
-                extra=["--no-feature-limit", "--no-tile-size-limit", "--drop-rate=0", "--no-tile-stats"],
+                extra=[
+                    "--no-feature-limit",
+                    "--no-tile-size-limit",
+                    "--drop-rate=0",
+                    "--no-tile-stats",
+                ],
                 read_parallel=True,
             ),
             "admin": lambda: tippecanoe(
@@ -290,7 +294,11 @@ def main() -> None:
                     ("berlin_border", TILES_INPUT / "berlin_border.fgb"),
                     ("agg_berlin", TILES_INPUT / "berlin_summary.fgb"),
                 ],
-                extra=["--no-tile-size-limit", "--no-simplification-of-shared-nodes", "--no-tile-stats"],
+                extra=[
+                    "--no-tile-size-limit",
+                    "--no-simplification-of-shared-nodes",
+                    "--no-tile-stats",
+                ],
                 read_parallel=True,
             ),
             "admin_centroids": lambda: tippecanoe(
@@ -301,7 +309,12 @@ def main() -> None:
                     ("admin_bezirke_centroids", TILES_INPUT / "admin_bezirke_centroids.fgb"),
                     ("admin_ortsteile_centroids", TILES_INPUT / "admin_ortsteile_centroids.fgb"),
                 ],
-                extra=["--no-feature-limit", "--no-tile-size-limit", "--drop-rate=0", "--no-tile-stats"],
+                extra=[
+                    "--no-feature-limit",
+                    "--no-tile-size-limit",
+                    "--drop-rate=0",
+                    "--no-tile-stats",
+                ],
                 read_parallel=True,
             ),
             "forests": lambda: tippecanoe(
@@ -312,7 +325,11 @@ def main() -> None:
                     ("forests", TILES_INPUT / "forests.fgb"),
                     ("forests_union", TILES_INPUT / "forests_union.fgb"),
                 ],
-                extra=["--no-tile-size-limit", "--no-simplification-of-shared-nodes", "--no-tile-stats"],
+                extra=[
+                    "--no-tile-size-limit",
+                    "--no-simplification-of-shared-nodes",
+                    "--no-tile-stats",
+                ],
                 read_parallel=True,
             ),
             "trees": lambda: tippecanoe(

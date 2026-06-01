@@ -1,8 +1,12 @@
 import { HEX_COLOR, HEX_ICON_SIZES, ADMIN_ICON_SIZES, HEX_RESOLUTIONS } from './config.js';
 import { buildForestIconImageExpr } from './icons.js';
 
-const HEX_OUTLINE_WIDTH = ['interpolate', ['linear'], ['zoom'], 4, 1.2, 14, 1.2, 15, 1.8, 17, 2.4];
+const HEX_OUTLINE_WIDTH = ['interpolate', ['linear'], ['zoom'], 4, 0.5, 14, 0.5, 15, 0.8, 17, 1.2];
 const ADMIN_OUTLINE_WIDTH = (baseWidth) => ['interpolate', ['linear'], ['zoom'], 4, baseWidth, 14, baseWidth, 15, baseWidth + 0.6, 17, baseWidth + 1.2];
+
+// Minimum zoom at which centroid icons appear (step: hidden below, visible at/above)
+const HEX_ICON_MIN_ZOOM  = { 6: 7, 7: 9, 8: 11, 9: 12 };
+const ADMIN_ICON_MIN_ZOOM = { bezirke: 8, ortsteile: 9 };
 
 // Density colour ramp — breakpoints expressed as fractions of a configurable max.
 // Call updateDensityScale(map, p95) when the active resolution changes.
@@ -25,11 +29,11 @@ export function updateDensityScale(map, p95) {
   const expr = densityColorExpr(p95);
   for (const resolution of HEX_RESOLUTIONS) {
     const sl = `hexes_res${resolution}`;
-    try { map.setPaintProperty(`${sl}-icon-trees`, 'icon-color', expr); } catch (_) {}
+    try { map.setPaintProperty(`${sl}-fill`, 'fill-color', expr); } catch (_) {}
     try { map.setPaintProperty(`${sl}-label-genus`, 'text-color', expr); } catch (_) {}
   }
   for (const admin of ['bezirke', 'ortsteile']) {
-    try { map.setPaintProperty(`admin_${admin}-icon`, 'icon-color', expr); } catch (_) {}
+    try { map.setPaintProperty(`admin_${admin}-fill`, 'fill-color', expr); } catch (_) {}
     try { map.setPaintProperty(`admin_${admin}-label`, 'text-color', expr); } catch (_) {}
   }
 }
@@ -61,16 +65,39 @@ function createLetterBg(size = 32) {
   return { width: size, height: size, data };
 }
 
-function createHatchPattern(color = '#2255aa', size = 16, lineWidth = 3) {
+function createDotPattern(color = 'white', size = 10, dotRadius = 2, yOffset = 0) {
+  const scratch = document.createElement('canvas').getContext('2d');
+  scratch.fillStyle = color;
+  scratch.fillRect(0, 0, 1, 1);
+  const [r, g, b] = scratch.getImageData(0, 0, 1, 1).data;
+  const data = new Uint8Array(size * size * 4);
+  const cx = (size - 1) / 2;
+  const cy = (((size - 1) / 2 + yOffset) % size + size) % size;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      // toroidal distance so the dot tiles seamlessly even when offset
+      const ddx = Math.min(Math.abs(x - cx), size - Math.abs(x - cx));
+      const ddy = Math.min(Math.abs(y - cy), size - Math.abs(y - cy));
+      // antialiased edge: full alpha inside, smooth ~1px falloff at the rim
+      const coverage = Math.min(Math.max(dotRadius + 0.5 - Math.hypot(ddx, ddy), 0), 1);
+      if (coverage > 0) {
+        const i = (y * size + x) * 4;
+        data[i] = r; data[i + 1] = g; data[i + 2] = b; data[i + 3] = Math.round(coverage * 255);
+      }
+    }
+  }
+  return { width: size, height: size, data };
+}
+
+function createHatchPattern(color = '#2a5e30', size = 16, lineWidth = 3) {
   const scratch = document.createElement('canvas').getContext('2d');
   scratch.fillStyle = color;
   scratch.fillRect(0, 0, 1, 1);
   const [r, g, b] = scratch.getImageData(0, 0, 1, 1).data;
   const data = new Uint8Array(size * size * 4);
   const halfWidth = Math.floor(lineWidth / 2);
-
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
       const diagonal = ((x + y) % size + size) % size;
       if (diagonal <= halfWidth || diagonal >= size - halfWidth) {
         const index = (y * size + x) * 4;
@@ -123,33 +150,44 @@ export function addMapLayers(map, tilesUrl) {
   map.addImage('letter-bg', createLetterBg(), { sdf: true });
   map.addSource('berlin-trees', { type: 'vector', url: tilesUrl });
 
+  // Pass 1: hex fills only — forest layers inserted after, so they render above fills
   for (const resolution of HEX_RESOLUTIONS) {
     const sourceLayer = `hexes_res${resolution}`;
-    const fcp = ['coalesce', ['get', 'forest_cover_pct'], 0];
-    const dualForestBand = ['all', ['>=', fcp, 33], ['<=', fcp, 67]];
-
     map.addLayer({
       id: `${sourceLayer}-fill`,
       type: 'fill',
       source: 'berlin-trees',
       'source-layer': sourceLayer,
       layout: { visibility: resolution === 7 ? 'visible' : 'none' },
-      // 0.001: effectively invisible but keeps the layer hittable for click/hover
-      paint: { 'fill-color': HEX_COLOR, 'fill-opacity': 0.001 },
+      paint: { 'fill-color': initialDensityColor, 'fill-opacity': 0.65 },
     });
+  }
+
+  // 2× supersampled (pixelRatio 2) → 5 CSS-px spacing, 2.5-px radius, smooth round dots
+  map.addImage('forest-dots', createDotPattern('#13321a', 10, 5, 10), { pixelRatio: 2 });
+  const dotPattern = 'forest-dots';
+
+  // Pass 2: hex outlines + centroids
+  for (const resolution of HEX_RESOLUTIONS) {
+    const sourceLayer = `hexes_res${resolution}`;
+    const fcp = ['coalesce', ['get', 'forest_cover_pct'], 0];
+    const dualForestBand = ['all', ['>=', fcp, 33], ['<=', fcp, 67]];
+    const minZoom = HEX_ICON_MIN_ZOOM[resolution];
 
     map.addLayer({
       id: `${sourceLayer}-outline`,
       type: 'line',
+      ...(resolution >= 8 ? { minzoom: minZoom } : {}),
       source: 'berlin-trees',
       'source-layer': sourceLayer,
       layout: { visibility: resolution === 7 ? 'visible' : 'none' },
-      paint: { 'line-color': '#ccc', 'line-width': HEX_OUTLINE_WIDTH, 'line-opacity': 0.7 },
+      paint: { 'line-color': '#e8e8e8', 'line-width': HEX_OUTLINE_WIDTH, 'line-opacity': 0.5 },
     });
 
     map.addLayer({
       id: `${sourceLayer}-label-genus`,
       type: 'symbol',
+      minzoom: minZoom,
       source: 'berlin-trees',
       'source-layer': `${sourceLayer}_centroids`,
       filter: HAS_TREES,
@@ -177,6 +215,7 @@ export function addMapLayers(map, tilesUrl) {
     map.addLayer({
       id: `${sourceLayer}-icon-trees`,
       type: 'symbol',
+      minzoom: minZoom,
       source: 'berlin-trees',
       'source-layer': `${sourceLayer}_centroids`,
       layout: {
@@ -187,7 +226,7 @@ export function addMapLayers(map, tilesUrl) {
         'icon-offset': ['case', dualForestBand, ['literal', [-32, 0]], ['literal', [0, 0]]],
       },
       paint: {
-        'icon-color': initialDensityColor,
+        'icon-color': 'white',
         'icon-opacity': ['case', ['>', fcp, 67], 0, 0.85],
       },
     });
@@ -195,6 +234,7 @@ export function addMapLayers(map, tilesUrl) {
     map.addLayer({
       id: `${sourceLayer}-icon-forest`,
       type: 'symbol',
+      minzoom: minZoom,
       source: 'berlin-trees',
       'source-layer': `${sourceLayer}_centroids`,
       layout: {
@@ -205,58 +245,15 @@ export function addMapLayers(map, tilesUrl) {
         'icon-offset': ['case', dualForestBand, ['literal', [32, 0]], ['literal', [0, 0]]],
       },
       paint: {
-        'icon-color': '#2255aa',
+        'icon-color': 'white',
         'icon-opacity': ['case', ['<', fcp, 33], 0, 0.85],
       },
     });
   }
 
-  map.addImage('forest-hatch', createHatchPattern());
-
-  map.addLayer({
-    id: 'forests-fill',
-    type: 'fill',
-    source: 'berlin-trees',
-    'source-layer': 'forests',
-    layout: { visibility: 'none' },
-    paint: {
-      'fill-pattern': 'forest-hatch',
-      'fill-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0, 15, 0.7],
-    },
-  }, 'hexes_res6-fill');
-
-  map.addLayer({
-    id: 'forests-outline',
-    type: 'line',
-    source: 'berlin-trees',
-    'source-layer': 'forests',
-    layout: { visibility: 'none' },
-    paint: { 'line-color': '#2255aa', 'line-width': 0.8, 'line-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0, 15, 0.6] },
-  }, 'hexes_res6-fill');
-
-  map.addLayer({
-    id: 'forests-union-fill',
-    type: 'fill',
-    source: 'berlin-trees',
-    'source-layer': 'forests_union',
-    layout: { visibility: 'visible' },
-    paint: {
-      'fill-pattern': 'forest-hatch',
-      'fill-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0.7, 15, 0],
-    },
-  }, 'hexes_res6-fill');
-
-  map.addLayer({
-    id: 'forests-union-outline',
-    type: 'line',
-    source: 'berlin-trees',
-    'source-layer': 'forests_union',
-    layout: { visibility: 'visible' },
-    paint: { 'line-color': '#2255aa', 'line-width': 1, 'line-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0.8, 15, 0] },
-  }, 'hexes_res6-fill');
-
   for (const admin of ['bezirke', 'ortsteile']) {
     const sourceLayer = `admin_${admin}`;
+    const adminMinZoom = ADMIN_ICON_MIN_ZOOM[admin];
 
     map.addLayer({
       id: `${sourceLayer}-fill`,
@@ -264,7 +261,7 @@ export function addMapLayers(map, tilesUrl) {
       source: 'berlin-trees',
       'source-layer': sourceLayer,
       layout: { visibility: 'none' },
-      paint: { 'fill-color': HEX_COLOR, 'fill-opacity': 0.001 },
+      paint: { 'fill-color': initialDensityColor, 'fill-opacity': 0.65 },
     });
 
     map.addLayer({
@@ -274,15 +271,16 @@ export function addMapLayers(map, tilesUrl) {
       'source-layer': sourceLayer,
       layout: { visibility: 'none' },
       paint: {
-        'line-color': '#ccc',
+        'line-color': '#e8e8e8',
         'line-width': ADMIN_OUTLINE_WIDTH(admin === 'bezirke' ? 2 : 1.2),
-        'line-opacity': 0.7,
+        'line-opacity': 0.5,
       },
     });
 
     map.addLayer({
       id: `${sourceLayer}-label`,
       type: 'symbol',
+      minzoom: adminMinZoom,
       source: 'berlin-trees',
       'source-layer': `${sourceLayer}_centroids`,
       filter: HAS_TREES,
@@ -310,6 +308,7 @@ export function addMapLayers(map, tilesUrl) {
     map.addLayer({
       id: `${sourceLayer}-icon`,
       type: 'symbol',
+      minzoom: adminMinZoom,
       source: 'berlin-trees',
       'source-layer': `${sourceLayer}_centroids`,
       layout: {
@@ -318,9 +317,52 @@ export function addMapLayers(map, tilesUrl) {
         'icon-size': ADMIN_ICON_SIZES[admin],
         'icon-allow-overlap': true,
       },
-      paint: { 'icon-color': initialDensityColor, 'icon-opacity': 0.85 },
+      paint: { 'icon-color': 'white', 'icon-opacity': 0.85 },
     });
   }
+
+  // Forest layers — on top of all hex/admin fills, outlines and icons
+  map.addLayer({
+    id: 'forests-union-fill',
+    type: 'fill',
+    source: 'berlin-trees',
+    'source-layer': 'forests_union',
+    layout: { visibility: 'visible' },
+    paint: {
+      'fill-pattern': dotPattern,
+      'fill-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0.7, 15, 0],
+    },
+  });
+
+  map.addLayer({
+    id: 'forests-union-outline',
+    type: 'line',
+    source: 'berlin-trees',
+    'source-layer': 'forests_union',
+    layout: { visibility: 'visible' },
+    paint: { 'line-color': '#2a5e30', 'line-width': 1, 'line-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0.8, 15, 0] },
+  });
+
+  map.addLayer({
+    id: 'forests-fill',
+    type: 'fill',
+    source: 'berlin-trees',
+    'source-layer': 'forests',
+    layout: { visibility: 'none' },
+    paint: {
+      'fill-pattern': dotPattern,
+      'fill-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0, 15, 0.7],
+    },
+  });
+
+  map.addLayer({
+    id: 'forests-outline',
+    type: 'line',
+    source: 'berlin-trees',
+    'source-layer': 'forests',
+    layout: { visibility: 'none' },
+    paint: { 'line-color': '#2a5e30', 'line-width': 0.8, 'line-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0, 15, 0.6] },
+  });
 
   map.addLayer({
     id: 'berlin-border',
@@ -415,4 +457,13 @@ export function addMapLayers(map, tilesUrl) {
       'circle-stroke-width': 2,
     },
   });
+
+  // Tree/forest genus silhouettes always render above all other layers
+  // (incl. the forest dot pattern, which otherwise sits on top of the fills).
+  const silhouetteLayers = [];
+  for (const r of HEX_RESOLUTIONS) silhouetteLayers.push(`hexes_res${r}-icon-trees`, `hexes_res${r}-icon-forest`);
+  for (const a of ['bezirke', 'ortsteile']) silhouetteLayers.push(`admin_${a}-icon`);
+  for (const id of silhouetteLayers) {
+    try { map.moveLayer(id); } catch (_) {}
+  }
 }
