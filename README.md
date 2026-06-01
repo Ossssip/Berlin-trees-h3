@@ -4,14 +4,12 @@
 
 Another take on visualizing Berlin's trees. Tree data is aggregated onto an H3 hex grid and packed into a single PMTiles archive served to the browser.
 
-<img src="https://raw.githubusercontent.com/Ossssip/
-Berlin-trees-hex
-/web/map.png" width="900">
+<img src="https://github.com/Ossssip/Berlin-trees-hex/blob/main/web/map.png?raw=true" width="900">
 ---
 ## Data
 
-Built from Berlin's public tree, forest, and administrative datasets, plus tree
-silhouettes from [PhyloPic](https://www.phylopic.org). See
+Built from Berlin's public tree, forest, and administrative borders datasets, tree
+silhouettes from [PhyloPic](https://www.phylopic.org) are used for visualization. See
 [`docs/data_sources.md`](docs/data_sources.md) for the full list of sources,
 licences, and attributions.
 
