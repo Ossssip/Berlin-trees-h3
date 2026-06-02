@@ -227,7 +227,7 @@ function renderTreeChart(props, phylopicIndex, maxRows) {
         <div class="bar-pct">${Number(otherShare).toFixed(1)}%<span class="bar-count">${otherCount.toLocaleString()}</span></div>
        </div>` : '';
 
-  return `<div class="card-section"><div class="card-section-title">Tree genera</div>${rows.join('')}${otherRow}</div>`;
+  return `<div class="card-section"><div class="card-section-title">Street and park trees</div>${rows.join('')}${otherRow}</div>`;
 }
 
 function renderForestChart(props, phylopicIndex) {
@@ -248,7 +248,7 @@ function renderForestChart(props, phylopicIndex) {
         <div class="bar-pct">${Number(otherShare).toFixed(1)}%</div>
        </div>` : '';
   const fcpBadge = `<span class="fcp-badge">${Number(fcp).toFixed(0)}% of area</span>`;
-  return `<div class="card-section card-forest"><div class="card-section-title">Forest composition ${fcpBadge}</div>${rows.join('')}${otherRow}</div>`;
+  return `<div class="card-section card-forest"><div class="card-section-title">Forest trees ${fcpBadge}</div>${rows.join('')}${otherRow}</div>`;
 }
 
 function renderDatasetCard(summary, phylopicIndex) {
@@ -265,7 +265,7 @@ function renderDatasetCard(summary, phylopicIndex) {
         <div class="bar-pct">${Number(otherShare).toFixed(1)}%<span class="bar-count">${otherCount.toLocaleString()}</span></div>
        </div>` : '';
   const treeSection = genera
-    ? `<div class="card-section"><div class="card-section-title">Top genera</div>${genera}${otherRow}</div>` : '';
+    ? `<div class="card-section"><div class="card-section-title">Street and park trees</div>${genera}${otherRow}</div>` : '';
 
   let forestSection = '';
   if (_forestEnabled && summary.forest_cover_pct > 0 && summary.forest_genera?.length) {
@@ -280,11 +280,11 @@ function renderDatasetCard(summary, phylopicIndex) {
           <div class="bar-pct">${Number(fOther).toFixed(1)}%</div>
          </div>` : '';
     const fcpBadge = `<span class="fcp-badge">${Number(summary.forest_cover_pct).toFixed(0)}% of area</span>`;
-    forestSection = `<div class="card-section card-forest"><div class="card-section-title">Forest composition ${fcpBadge}</div>${fRows}${fOtherRow}</div>`;
+    forestSection = `<div class="card-section card-forest"><div class="card-section-title">Forest trees ${fcpBadge}</div>${fRows}${fOtherRow}</div>`;
   }
 
   return `
-    <div class="card-title">Berlin Trees</div>
+    <div class="card-title">Berlin street and park trees</div>
     <div class="card-stats">
       <span>${(summary.tree_count || 0).toLocaleString()} ${summary.tree_count === 1 ? 'tree' : 'trees'}</span>
       <span>${summary.genus_count || 0} genera</span>
