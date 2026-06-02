@@ -11,9 +11,7 @@ maplibregl.addProtocol('pmtiles', protocol.tile.bind(protocol));
 const REPO_URL = 'https://github.com/Ossssip/Berlin-trees-h3';
 const DATA_SOURCES_URL = `${REPO_URL}/blob/main/docs/data_sources.md`;
 const ATTRIBUTION = [
-  // This entry renders last; append the repo link to its end so "GitHub repo"
-  // is the final item on the attribution line (regardless of MapLibre's order).
-  `Street &amp; park trees, forests, admin boundaries: <a href="${DATA_SOURCES_URL}" target="_blank" rel="noopener">Senatsverwaltung Berlin</a>, <a href="https://www.govdata.de/dl-de/zero-2-0" target="_blank" rel="noopener">dl-de/zero-2-0</a> | <a href="${REPO_URL}" target="_blank" rel="noopener">GitHub repo</a>`,
+  `Street &amp; park trees, forests, admin boundaries: <a href="${DATA_SOURCES_URL}" target="_blank" rel="noopener">Senatsverwaltung Berlin</a>, <a href="https://www.govdata.de/dl-de/zero-2-0" target="_blank" rel="noopener">dl-de/zero-2-0</a>`,
   `Grün Berlin trees: <a href="${DATA_SOURCES_URL}" target="_blank" rel="noopener">Grün Berlin GmbH</a>, <a href="https://www.govdata.de/dl-de/by-2-0" target="_blank" rel="noopener">dl-de/by-2-0</a>`,
   `Tree silhouettes: <a href="https://www.phylopic.org" target="_blank" rel="noopener">PhyloPic</a>, <a href="${DATA_SOURCES_URL}#tree-silhouettes" target="_blank" rel="noopener">attributions</a>`,
 ];
@@ -109,4 +107,16 @@ map.on('load', async () => {
     attrEl.classList.add('maplibregl-compact-show');
     setTimeout(() => attrEl.classList.remove('maplibregl-compact-show'), 10000);
   }
+
+  // Pin a "github repo" link at the very end of the attribution. MapLibre sorts
+  // its attribution entries by length and rebuilds the inner HTML on updates, so
+  // a customAttribution can't be forced last — append to the DOM directly and
+  // re-append whenever MapLibre regenerates it.
+  const REPO_LINK = ` | <a class="repo-attrib" href="${REPO_URL}" target="_blank" rel="noopener">GitHub repo</a>`;
+  function ensureRepoAttrib() {
+    const inner = document.querySelector('.maplibregl-ctrl-attrib-inner');
+    if (inner && !inner.querySelector('a.repo-attrib')) inner.insertAdjacentHTML('beforeend', REPO_LINK);
+  }
+  if (attrEl) new MutationObserver(ensureRepoAttrib).observe(attrEl, { childList: true, subtree: true });
+  ensureRepoAttrib();
 });
