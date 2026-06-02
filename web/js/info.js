@@ -383,6 +383,17 @@ function showCard(html, { showClose = false } = {}) {
   }
 }
 
+// Mobile: pin the detail panel to the short idle card's width (--panel-w) so it
+// doesn't resize when wider feature cards are shown. Measured once on first idle.
+function _pinPanelWidth() {
+  if (!window.matchMedia('(max-width: 600px)').matches) return;
+  requestAnimationFrame(() => {
+    const el = document.getElementById('ctrl-info');
+    const w = el?.getBoundingClientRect().width ?? 0;
+    if (w > 0) document.documentElement.style.setProperty('--panel-w', `${Math.ceil(w)}px`);
+  });
+}
+
 function showIdle() {
   _state = 'idle';
   _currentCard = null;
@@ -483,6 +494,7 @@ export function setupInfoCard(map, getPhylopicIndex, { onLatchChange } = {}) {
     _summary = summary;
     _densityRanges = summary?.density_ranges ?? null;
     if (_state === 'idle') showIdle();
+    if (summary) _pinPanelWidth();
   });
 
   const hexLayers = [
@@ -500,6 +512,17 @@ export function setupInfoCard(map, getPhylopicIndex, { onLatchChange } = {}) {
   function _resolveCentroidFeature(point) {
     const hits = map.queryRenderedFeatures(point, { layers: hexLayers });
     return hits[0] ?? null;
+  }
+
+  // A tap on a centroid icon fires both the centroid-layer and the underlying
+  // fill-layer click handlers for the same event; without this guard the second
+  // handler would toggle off what the first just latched. The first to claim the
+  // event handles it; the other bails.
+  let _lastHandledClick = null;
+  function _claimClick(e) {
+    if (e.originalEvent === _lastHandledClick) return false;
+    _lastHandledClick = e.originalEvent;
+    return true;
   }
 
   centroidLayers.forEach((centroidId) => {
@@ -533,9 +556,10 @@ export function setupInfoCard(map, getPhylopicIndex, { onLatchChange } = {}) {
     });
 
     map.on('click', centroidId, (e) => {
-      e.preventDefault();
       const feature = _resolveCentroidFeature(e.point);
-      if (!feature) return;
+      if (!feature) return;          // no hex underneath — let the fill handler try
+      if (!_claimClick(e)) return;   // the fill handler already handled this tap
+      e.preventDefault();
       const props = feature.properties;
       const layerId = feature.layer.id;
       const type = _layerType(layerId);
@@ -594,6 +618,7 @@ export function setupInfoCard(map, getPhylopicIndex, { onLatchChange } = {}) {
     });
 
     map.on('click', layerId, (e) => {
+      if (!_claimClick(e)) return;   // a centroid handler already handled this tap
       e.preventDefault();
       const feature = e.features[0];
       const props = feature.properties;

@@ -367,11 +367,18 @@ body { font-family: sans-serif; }
   /* Panel doesn't scroll itself */
   #right-panel { overflow-y: visible; }
 
-  /* Card-stack: column of colorbar + info card; width driven by info card content */
-  #card-stack { display: flex; flex-direction: column; gap: 6px; }
-  /* Info card: size to content (stats line is the dominant row); colorbar matches */
+  /* Card-stack: column of colorbar + info card; width driven by info card
+     content, children right-justified to the panel edge. */
+  #card-stack { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  /* Colorbar always matches the info card width (both right-justified by the
+     panel's flex-end). The detail panel is pinned to the short idle card's
+     width (measured once into --panel-w) so it doesn't resize per card. */
   #ctrl-info { width: max-content; }
   #ctrl-colorbar { width: 100%; }
+  /* Collapsed: pin to the short card width. Expanded: size to its own (wider)
+     content so the resolution rows aren't clipped or pushed off-screen. */
+  #ctrl-detail { width: var(--panel-w, auto); }
+  #ctrl-detail.detail-expanded { width: max-content; }
   /* Long admin names shouldn't blow up the width — let them wrap */
   .card-title { max-width: 200px; }
 
