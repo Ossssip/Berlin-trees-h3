@@ -3,9 +3,16 @@ name: Pipeline
 on:
   schedule:
     - cron: '0 3 * * 1'   # Every Monday 03:00 UTC
+  # Pushes that affect the output run the pipeline: check-updates skips the tile
+  # rebuild when source data is unchanged, then deploy.yml (workflow_run)
+  # publishes the latest web/ + release PMTiles to Pages. Pushes touching only
+  # docs/other files don't trigger a redeploy. The schedule covers data refreshes
+  # regardless of paths. The checksums commit carries [skip ci], so it never
+  # re-triggers this workflow.
   push:
     branches: [main]
     paths:
+      - 'web/**'
       - 'pipeline/**'
       - 'dbt/**'
       - 'data/checksums.json'
@@ -59,7 +66,7 @@ jobs:
           fi
           echo "needs_update=$([ $CODE -eq 1 ] && echo true || echo false)" >> $GITHUB_OUTPUT
 
-  # ── Job 2: fetch raw WFS data ────────────────────────────────────────────────
+  # ── Job 2: fetch raw WFS data — one matrix job per source (non-blocking) ──────
   fetch:
     needs: check-updates
     if: |
@@ -70,6 +77,15 @@ jobs:
         (github.event_name == 'workflow_dispatch' && inputs.start_from == 'fetch')
       )
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false   # one source failing must not skip the others
+      matrix:
+        source:
+          - alkis_ortsteile
+          - baumbestand_anlagen
+          - baumbestand_strassen
+          - gruen_berlin
+          - forstbetriebskarte
     steps:
       - uses: actions/checkout@v6
 
@@ -82,137 +98,78 @@ jobs:
       - name: Install Python deps
         run: pip install -r requirements-ci.txt
 
-      # ── Per-source raw data: restore from cache or fetch fresh ──────────────
+      - name: Resolve source count
+        run: echo "COUNT=${{ needs.check-updates.outputs[format('count_{0}', matrix.source)] }}" >> "$GITHUB_ENV"
 
-      - name: Restore raw — alkis_ortsteile
-        id: cache-alkis
-        uses: actions/cache@v5
+      # Restore the complete parquet for this source. restore-keys falls back to
+      # the most recent previous parquet (last-good data) on an exact-key miss,
+      # so a failed fetch can still proceed on stale data. cache/restore (not
+      # cache) so nothing auto-saves — we save explicitly only on a fresh fetch.
+      - name: Restore raw
+        id: cache
+        uses: actions/cache/restore@v5
         with:
-          path: data/raw/alkis_ortsteile.parquet
-          key: wfs-alkis_ortsteile-${{ needs.check-updates.outputs.count_alkis_ortsteile }}
+          path: data/raw/${{ matrix.source }}.parquet
+          key: wfs-${{ matrix.source }}-${{ env.COUNT }}
+          restore-keys: wfs-${{ matrix.source }}-
 
-      - name: Restore checkpoint — alkis_ortsteile
-        if: steps.cache-alkis.outputs.cache-hit != 'true'
-        uses: actions/cache@v5
+      - name: Restore checkpoint
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v5
         with:
-          path: data/raw/alkis_ortsteile.partial.parquet
-          key: wfs-alkis_ortsteile-${{ needs.check-updates.outputs.count_alkis_ortsteile }}-partial
+          path: data/raw/${{ matrix.source }}.partial.parquet
+          key: wfs-${{ matrix.source }}-${{ env.COUNT }}-partial
 
-      - name: Fetch alkis_ortsteile
-        id: fetch-alkis
-        if: steps.cache-alkis.outputs.cache-hit != 'true'
-        run: python pipeline/fetch_wfs.py --source alkis_ortsteile
+      - name: Fetch
+        id: fetch
+        if: steps.cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        run: python pipeline/fetch_wfs.py --source ${{ matrix.source }}
 
-      - name: Save checkpoint — alkis_ortsteile
-        if: always() && steps.fetch-alkis.outcome == 'failure'
+      - name: Save checkpoint on failure
+        if: always() && steps.fetch.outcome == 'failure'
         uses: actions/cache/save@v5
         with:
-          path: data/raw/alkis_ortsteile.partial.parquet
-          key: wfs-alkis_ortsteile-${{ needs.check-updates.outputs.count_alkis_ortsteile }}-partial
+          path: data/raw/${{ matrix.source }}.partial.parquet
+          key: wfs-${{ matrix.source }}-${{ env.COUNT }}-partial
 
-      - name: Restore raw — baumbestand_anlagen
-        id: cache-anlagen
-        uses: actions/cache@v5
-        with:
-          path: data/raw/baumbestand_anlagen.parquet
-          key: wfs-baumbestand_anlagen-${{ needs.check-updates.outputs.count_baumbestand_anlagen }}
+      # Classify: fresh (cache hit or fetch ok), stale (fetch failed but a
+      # previous parquet was restored), or hard-fail (no data at all).
+      - name: Classify outcome
+        id: verify
+        run: |
+          if [ "${{ steps.cache.outputs.cache-hit }}" = "true" ] || [ "${{ steps.fetch.outcome }}" = "success" ]; then
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+            echo "${{ matrix.source }}: fresh data"
+          elif [ -f "data/raw/${{ matrix.source }}.parquet" ]; then
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::${{ matrix.source }}: fetch failed — using last-good cached parquet (stale)"
+          else
+            echo "::error::${{ matrix.source }}: fetch failed and no cached parquet to fall back to"
+            exit 1
+          fi
 
-      - name: Restore checkpoint — baumbestand_anlagen
-        if: steps.cache-anlagen.outputs.cache-hit != 'true'
-        uses: actions/cache@v5
-        with:
-          path: data/raw/baumbestand_anlagen.partial.parquet
-          key: wfs-baumbestand_anlagen-${{ needs.check-updates.outputs.count_baumbestand_anlagen }}-partial
-
-      - name: Fetch baumbestand_anlagen
-        id: fetch-anlagen
-        if: steps.cache-anlagen.outputs.cache-hit != 'true'
-        run: python pipeline/fetch_wfs.py --source baumbestand_anlagen
-
-      - name: Save checkpoint — baumbestand_anlagen
-        if: always() && steps.fetch-anlagen.outcome == 'failure'
+      # Cache the freshly fetched parquet under the current-count key for the
+      # transform job. Stale fallbacks are deliberately NOT saved, so the key
+      # stays empty and the next run retries the fetch.
+      - name: Save raw to cache
+        if: steps.fetch.outcome == 'success'
         uses: actions/cache/save@v5
         with:
-          path: data/raw/baumbestand_anlagen.partial.parquet
-          key: wfs-baumbestand_anlagen-${{ needs.check-updates.outputs.count_baumbestand_anlagen }}-partial
+          path: data/raw/${{ matrix.source }}.parquet
+          key: wfs-${{ matrix.source }}-${{ env.COUNT }}
 
-      - name: Restore raw — baumbestand_strassen
-        id: cache-strassen
-        uses: actions/cache@v5
+      - name: Flag stale fallback
+        if: steps.verify.outputs.stale == 'true'
+        run: echo "${{ matrix.source }}" > stale.txt
+
+      - name: Upload stale marker
+        if: steps.verify.outputs.stale == 'true'
+        uses: actions/upload-artifact@v7
         with:
-          path: data/raw/baumbestand_strassen.parquet
-          key: wfs-baumbestand_strassen-${{ needs.check-updates.outputs.count_baumbestand_strassen }}
-
-      - name: Restore checkpoint — baumbestand_strassen
-        if: steps.cache-strassen.outputs.cache-hit != 'true'
-        uses: actions/cache@v5
-        with:
-          path: data/raw/baumbestand_strassen.partial.parquet
-          key: wfs-baumbestand_strassen-${{ needs.check-updates.outputs.count_baumbestand_strassen }}-partial
-
-      - name: Fetch baumbestand_strassen
-        id: fetch-strassen
-        if: steps.cache-strassen.outputs.cache-hit != 'true'
-        run: python pipeline/fetch_wfs.py --source baumbestand_strassen
-
-      - name: Save checkpoint — baumbestand_strassen
-        if: always() && steps.fetch-strassen.outcome == 'failure'
-        uses: actions/cache/save@v5
-        with:
-          path: data/raw/baumbestand_strassen.partial.parquet
-          key: wfs-baumbestand_strassen-${{ needs.check-updates.outputs.count_baumbestand_strassen }}-partial
-
-      - name: Restore raw — gruen_berlin
-        id: cache-gruen
-        uses: actions/cache@v5
-        with:
-          path: data/raw/gruen_berlin.parquet
-          key: wfs-gruen_berlin-${{ needs.check-updates.outputs.count_gruen_berlin }}
-
-      - name: Restore checkpoint — gruen_berlin
-        if: steps.cache-gruen.outputs.cache-hit != 'true'
-        uses: actions/cache@v5
-        with:
-          path: data/raw/gruen_berlin.partial.parquet
-          key: wfs-gruen_berlin-${{ needs.check-updates.outputs.count_gruen_berlin }}-partial
-
-      - name: Fetch gruen_berlin
-        id: fetch-gruen
-        if: steps.cache-gruen.outputs.cache-hit != 'true'
-        run: python pipeline/fetch_wfs.py --source gruen_berlin
-
-      - name: Save checkpoint — gruen_berlin
-        if: always() && steps.fetch-gruen.outcome == 'failure'
-        uses: actions/cache/save@v5
-        with:
-          path: data/raw/gruen_berlin.partial.parquet
-          key: wfs-gruen_berlin-${{ needs.check-updates.outputs.count_gruen_berlin }}-partial
-
-      - name: Restore raw — forstbetriebskarte
-        id: cache-forst
-        uses: actions/cache@v5
-        with:
-          path: data/raw/forstbetriebskarte.parquet
-          key: wfs-forstbetriebskarte-${{ needs.check-updates.outputs.count_forstbetriebskarte }}
-
-      - name: Restore checkpoint — forstbetriebskarte
-        if: steps.cache-forst.outputs.cache-hit != 'true'
-        uses: actions/cache@v5
-        with:
-          path: data/raw/forstbetriebskarte.partial.parquet
-          key: wfs-forstbetriebskarte-${{ needs.check-updates.outputs.count_forstbetriebskarte }}-partial
-
-      - name: Fetch forstbetriebskarte
-        id: fetch-forst
-        if: steps.cache-forst.outputs.cache-hit != 'true'
-        run: python pipeline/fetch_wfs.py --source forstbetriebskarte
-
-      - name: Save checkpoint — forstbetriebskarte
-        if: always() && steps.fetch-forst.outcome == 'failure'
-        uses: actions/cache/save@v5
-        with:
-          path: data/raw/forstbetriebskarte.partial.parquet
-          key: wfs-forstbetriebskarte-${{ needs.check-updates.outputs.count_forstbetriebskarte }}-partial
+          name: stale-${{ matrix.source }}
+          path: stale.txt
+          retention-days: 1
 
   # ── Job 3: transform (init_db + dbt) ─────────────────────────────────────────
   transform:
@@ -240,35 +197,35 @@ jobs:
       # ── Restore raw parquets saved by the fetch job ──────────────────────────
 
       - name: Restore raw — alkis_ortsteile
-        uses: actions/cache@v5
+        uses: actions/cache/restore@v5
         with:
           path: data/raw/alkis_ortsteile.parquet
           key: wfs-alkis_ortsteile-${{ needs.check-updates.outputs.count_alkis_ortsteile }}
           restore-keys: wfs-alkis_ortsteile-
 
       - name: Restore raw — baumbestand_anlagen
-        uses: actions/cache@v5
+        uses: actions/cache/restore@v5
         with:
           path: data/raw/baumbestand_anlagen.parquet
           key: wfs-baumbestand_anlagen-${{ needs.check-updates.outputs.count_baumbestand_anlagen }}
           restore-keys: wfs-baumbestand_anlagen-
 
       - name: Restore raw — baumbestand_strassen
-        uses: actions/cache@v5
+        uses: actions/cache/restore@v5
         with:
           path: data/raw/baumbestand_strassen.parquet
           key: wfs-baumbestand_strassen-${{ needs.check-updates.outputs.count_baumbestand_strassen }}
           restore-keys: wfs-baumbestand_strassen-
 
       - name: Restore raw — gruen_berlin
-        uses: actions/cache@v5
+        uses: actions/cache/restore@v5
         with:
           path: data/raw/gruen_berlin.parquet
           key: wfs-gruen_berlin-${{ needs.check-updates.outputs.count_gruen_berlin }}
           restore-keys: wfs-gruen_berlin-
 
       - name: Restore raw — forstbetriebskarte
-        uses: actions/cache@v5
+        uses: actions/cache/restore@v5
         with:
           path: data/raw/forstbetriebskarte.parquet
           key: wfs-forstbetriebskarte-${{ needs.check-updates.outputs.count_forstbetriebskarte }}
@@ -386,8 +343,27 @@ jobs:
 
       # ── Commit, release, deploy ──────────────────────────────────────────────
 
+      # Sources the fetch job served from a stale cache fallback: don't advance
+      # their checksum, so the next run detects them as changed and retries.
+      - name: Collect stale-source markers
+        uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          pattern: stale-*
+          path: stale-markers
+
+      - name: Build stale exclude list
+        id: stale
+        run: |
+          list=""
+          if [ -d stale-markers ]; then
+            list=$(ls stale-markers 2>/dev/null | sed 's/^stale-//' | paste -sd, -)
+          fi
+          echo "list=$list" >> "$GITHUB_OUTPUT"
+          if [ -n "$list" ]; then echo "::warning::Keeping checksums (stale fallback) for: $list"; fi
+
       - name: Update checksums
-        run: python pipeline/check_updates.py --update
+        run: python pipeline/check_updates.py --update --exclude "${{ steps.stale.outputs.list }}"
 
       - name: Commit checksums
         run: |

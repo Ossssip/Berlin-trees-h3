@@ -1,8 +1,12 @@
 name: Deploy to GitHub Pages
 
 on:
-  push:
-    branches: [main]
+  # Deploy only after the data pipeline finishes (so the freshly built PMTiles
+  # in the data-latest release is available to publish), or on manual dispatch.
+  # No push trigger: a plain push has no fresh PMTiles and would just redeploy.
+  workflow_run:
+    workflows: ["Pipeline"]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -16,12 +20,28 @@ concurrency:
 
 jobs:
   deploy:
+    # Always deploy on push / manual run; for the pipeline trigger only deploy
+    # when the pipeline actually succeeded.
+    if: >
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+
+      # The PMTiles archive is gitignored (too large for git), so pull it from
+      # the data-latest release into web/public so Pages can serve it.
+      - name: Download PMTiles from release
+        run: |
+          mkdir -p web/public
+          gh release download data-latest \
+            --pattern berlin_trees.pmtiles \
+            --dir web/public --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/upload-pages-artifact@v5
         with:

@@ -15,6 +15,22 @@ const ATTRIBUTION = [
   `Tree silhouettes: <a href="https://www.phylopic.org" target="_blank" rel="noopener">PhyloPic</a>, <a href="${DATA_SOURCES_URL}#tree-silhouettes" target="_blank" rel="noopener">attributions</a>`,
 ];
 
+// Tiles are served from GitHub Pages when it supports byte-range (HTTP 206)
+// requests; otherwise the map falls back to the Cloudflare Worker mirror.
+const WORKER_TILES_URL = 'pmtiles://https://berlin-trees-pmtiles.ossssip.workers.dev/';
+
+async function resolveTilesUrl() {
+  const pagesHttp = new URL('../public/berlin_trees.pmtiles', import.meta.url).href;
+  try {
+    const res = await fetch(pagesHttp, { headers: { Range: 'bytes=0-6' } });
+    if (res.status === 206) {
+      const magic = new TextDecoder().decode(new Uint8Array(await res.arrayBuffer()));
+      if (magic.startsWith('PMTiles')) return `pmtiles://${pagesHttp}`;
+    }
+  } catch (_) { /* network error — fall back to the worker */ }
+  return WORKER_TILES_URL;
+}
+
 const _saved = loadState();
 
 const map = new maplibregl.Map({
@@ -32,8 +48,8 @@ registerMissingImagePlaceholder(map);
 let phylopicIndex = {};
 const getPhylopicIndex = () => phylopicIndex;
 
-map.on('load', () => {
-  const tilesUrl = 'pmtiles://https://berlin-trees-pmtiles.ossssip.workers.dev/';
+map.on('load', async () => {
+  const tilesUrl = await resolveTilesUrl();
 
   addMapLayers(map, tilesUrl);
 

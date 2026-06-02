@@ -21,8 +21,7 @@ WFS sources are fetched as Parquet, loaded into [DuckDB](https://duckdb.org/),
 and cleaned, unified, and aggregated by [dbt](https://www.getdbt.com/) into [H3](https://h3geo.org/) hexes and admin borders. Spatial work uses the
  library. Tiles are built with
 [tippecanoe](https://github.com/felt/tippecanoe) into a
-[PMTiles](https://protomaps.com/docs/pmtiles) archive, served via Cloudflare
-Workers. 
+[PMTiles](https://protomaps.com/docs/pmtiles) archive.
 
 
 ## Pipeline
@@ -44,7 +43,7 @@ init_db.py + dbt     ← load into DuckDB, then clean, unify, and aggregate:
     │                   with genus histograms, density, and forest cover per cell
     ▼
 build_tiles.py       ← tippecanoe → three scoped layers (hexes, forests, trees)
-                       merged into one berlin_trees.pmtiles, served via Cloudflare Workers
+                       merged into one berlin_trees.pmtiles.
 ```
 
 

@@ -91,7 +91,16 @@ def main() -> None:
         default=None,
         help="Check only this source key (default: all sources).",
     )
+    p.add_argument(
+        "--exclude",
+        default="",
+        help="Comma-separated source keys to leave unchanged in --update mode "
+        "(sources served from a stale cache fallback). Their stored count is "
+        "kept so the next run detects them as changed and retries.",
+    )
     args = p.parse_args()
+
+    excluded = {s.strip() for s in args.exclude.split(",") if s.strip()}
 
     with open(SOURCES_FILE) as f:
         sources = yaml.safe_load(f)
@@ -114,6 +123,17 @@ def main() -> None:
         for key, cfg in sources.items():
             old_entry = checksums.get(key, {"count": 0, "last_checked": None})
             old_count = old_entry.get("count", 0)
+
+            # Source served stale cached data this run: keep its stored count so
+            # the next run still sees a change and retries it.
+            if args.update and key in excluded:
+                log.info(
+                    "  [%s] stale fallback — keeping stored count %s (not advancing)",
+                    key,
+                    old_count,
+                )
+                rows.append((key, old_count, old_count, "kept"))
+                continue
 
             try:
                 new_count = wfs_hits(session, cfg["url"], cfg["layer"])
@@ -158,6 +178,7 @@ def main() -> None:
             "changed": "CHANGED ⚠",
             "error": "ERROR ✗",
             "suspicious": "SUSPICIOUS ✗",
+            "kept": "KEPT (stale)",
         }.get(status, status)
         log.info("%-*s  %10s  %10s  %s", col, key, old, new, label)
     log.info("─" * 70)
