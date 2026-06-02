@@ -23,6 +23,7 @@ let _latchedId = null;        // string ID of the latched feature
 let _expanded = false;        // whether the genus chart is expanded to 10 rows
 let _currentCard = null;      // { props, layerId, type } for re-render on expand
 let _forestEnabled = true;    // mirrors the forest toggle state
+let _lastColorbarMode = null; // last mode passed to updateColorbar (for re-apply)
 
 export function setForestEnabled(enabled) {
   _forestEnabled = enabled;
@@ -40,6 +41,7 @@ const MODE_RANGE_KEY = {
 };
 
 export function updateColorbar(mode) {
+  _lastColorbarMode = mode;
   const key = MODE_RANGE_KEY[String(mode)] ?? null;
   const bar = document.getElementById('ctrl-colorbar');
   if (!bar) return;
@@ -52,16 +54,46 @@ export function updateColorbar(mode) {
 
   const range = _densityRanges?.[key];
   const p95 = range?.p95 ?? 1000;
-
-  if (_map) updateDensityScale(_map, p95);
-
-  const ticks = bar.querySelectorAll('.cb-tick span');
-  if (ticks.length >= 4) {
-    ticks[0].textContent = '0';
-    ticks[1].textContent = _fmt(Math.round(p95 * 0.10));
-    ticks[2].textContent = _fmt(Math.round(p95 * 0.40));
-    ticks[3].textContent = _fmt(p95) + '+';
+  let quantiles = (range?.quantiles && range.quantiles.length >= 2) ? range.quantiles : null;
+  if (quantiles) {
+    // Clamp the top breakpoint to p95 so the long right tail doesn't stretch the
+    // top colour band; densities above p95 saturate to the darkest colour.
+    const cap = Math.max(p95, quantiles[quantiles.length - 2] + 1);
+    quantiles = [...quantiles.slice(0, -1), cap];
   }
+
+  if (_map) updateDensityScale(_map, quantiles, p95);
+
+  // Label density at evenly-spaced rank positions along the bar (quantile scale),
+  // or evenly-spaced density when no quantiles are available (linear fallback).
+  const ticksEl = bar.querySelector('.cb-ticks');
+  if (ticksEl) {
+    const M = 6;
+    const labels = [];
+    for (let i = 0; i < M; i++) {
+      const r = i / (M - 1);
+      const v = quantiles ? _quantileAt(quantiles, r) : Math.max(p95, 2) * r;
+      labels.push(_fmt(Math.round(v)) + (i === M - 1 ? '+' : ''));
+    }
+    ticksEl.innerHTML = labels.map(l => `<div class="cb-tick"><span>${l}</span></div>`).join('');
+  }
+}
+
+// Density at rank r in [0,1], linearly interpolated between quantile breakpoints.
+function _quantileAt(q, r) {
+  const N = q.length - 1;
+  const x = r * N;
+  const i = Math.min(Math.floor(x), N - 1);
+  return q[i] + (q[i + 1] - q[i]) * (x - i);
+}
+
+// Parse the deciles JSON string stored on the agg_berlin summary feature.
+function _parseQuantiles(s) {
+  if (typeof s !== 'string') return null;
+  try {
+    const a = JSON.parse(s);
+    return Array.isArray(a) && a.length >= 2 ? a.map(Number) : null;
+  } catch (_) { return null; }
 }
 
 function _fmt(n) { return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n); }
@@ -483,12 +515,12 @@ function _parseSummaryFromTileProps(props) {
     })).filter(g => g.genus),
     forest_genus_other_share: Number(props.forest_genus_other_share ?? 0),
     density_ranges: {
-      res6:      { p50: Number(props.density_res6_p50),      p95: Number(props.density_res6_p95) },
-      res7:      { p50: Number(props.density_res7_p50),      p95: Number(props.density_res7_p95) },
-      res8:      { p50: Number(props.density_res8_p50),      p95: Number(props.density_res8_p95) },
-      res9:      { p50: Number(props.density_res9_p50),      p95: Number(props.density_res9_p95) },
-      bezirke:   { p50: Number(props.density_bezirke_p50),   p95: Number(props.density_bezirke_p95) },
-      ortsteile: { p50: Number(props.density_ortsteile_p50), p95: Number(props.density_ortsteile_p95) },
+      res6:      { p50: Number(props.density_res6_p50),      p95: Number(props.density_res6_p95),      quantiles: _parseQuantiles(props.density_res6_quantiles) },
+      res7:      { p50: Number(props.density_res7_p50),      p95: Number(props.density_res7_p95),      quantiles: _parseQuantiles(props.density_res7_quantiles) },
+      res8:      { p50: Number(props.density_res8_p50),      p95: Number(props.density_res8_p95),      quantiles: _parseQuantiles(props.density_res8_quantiles) },
+      res9:      { p50: Number(props.density_res9_p50),      p95: Number(props.density_res9_p95),      quantiles: _parseQuantiles(props.density_res9_quantiles) },
+      bezirke:   { p50: Number(props.density_bezirke_p50),   p95: Number(props.density_bezirke_p95),   quantiles: _parseQuantiles(props.density_bezirke_quantiles) },
+      ortsteile: { p50: Number(props.density_ortsteile_p50), p95: Number(props.density_ortsteile_p95), quantiles: _parseQuantiles(props.density_ortsteile_quantiles) },
     },
   };
 }
@@ -512,6 +544,9 @@ export function setupInfoCard(map, getPhylopicIndex, { onLatchChange } = {}) {
     _densityRanges = summary?.density_ranges ?? null;
     if (_state === 'idle') showIdle();
     if (summary) _pinPanelWidth();
+    // The density scale/colorbar may have been applied (by the initial mode
+    // setup) before the summary loaded — re-apply now with the real ranges.
+    if (_densityRanges && _lastColorbarMode != null) updateColorbar(_lastColorbarMode);
   });
 
   const hexLayers = [

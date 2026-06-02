@@ -12,21 +12,48 @@ const ADMIN_ICON_MIN_ZOOM = { bezirke: 8, ortsteile: 9 };
 // Call updateDensityScale(map, p95) when the active resolution changes.
 const DENSITY_STOPS_BASE = [0, '#c7e9c0', 0.10, '#74c476', 0.40, '#238b45', 1.0, '#005a32'];
 
-export function densityColorExpr(p95) {
-  const max = Math.max(p95, 1);
-  return [
-    'interpolate', ['linear'], ['coalesce', ['get', 'tree_density_km2'], 0],
-    0,              '#c7e9c0',
-    max * 0.10,     '#74c476',
-    max * 0.40,     '#238b45',
-    max,            '#005a32',
+// Colour ramp in RANK space (0..1): equal rank intervals → equal colour bands.
+const COLOR_RAMP = [0, '#c7e9c0', 1 / 3, '#74c476', 2 / 3, '#238b45', 1, '#005a32'];
+
+// Quasi-continuous quantile scale: `quantiles` are per-resolution density
+// breakpoints (deciles). The inner interpolate maps a hex's density to its rank
+// [0,1] via the empirical CDF; the outer maps that rank to the colour ramp.
+export function densityColorExpr(quantiles, p95) {
+  const cap = Math.max(p95 || 0, 2);
+  const raw = ['coalesce', ['get', 'tree_density_km2'], 0];
+  const fcp = ['coalesce', ['get', 'forest_cover_pct'], 0];
+  // Suppress artefactual density: a narrow road through forest leaves a tiny
+  // non-forest area, so a few trees read as ~20k trees/km². Colour these at the
+  // lowest value when forest >85% and density exceeds p95, or whenever forest >95%.
+  const value = ['case',
+    ['any', ['all', ['>', fcp, 85], ['>', raw, cap]], ['>', fcp, 95]],
+    0, raw,
   ];
+
+  if (!Array.isArray(quantiles) || quantiles.length < 2) {
+    // Linear fallback until the quantile array is available from the tiles.
+    return ['interpolate', ['linear'], value,
+      0, '#c7e9c0', cap / 3, '#74c476', cap * (2 / 3), '#238b45', cap, '#005a32'];
+  }
+
+  const N = quantiles.length - 1;
+  const rankStops = [];
+  let prev = -Infinity;
+  for (let i = 0; i <= N; i++) {
+    let q = Number(quantiles[i]);
+    if (!Number.isFinite(q)) q = prev + 1;
+    if (q <= prev) q = prev + 1e-6;   // interpolate input stops must strictly ascend
+    prev = q;
+    rankStops.push(q, i / N);
+  }
+  const rank = ['interpolate', ['linear'], value, ...rankStops];
+  return ['interpolate', ['linear'], rank, ...COLOR_RAMP];
 }
 
 const INITIAL_P95 = 2818; // res7 default on load
 
-export function updateDensityScale(map, p95) {
-  const expr = densityColorExpr(p95);
+export function updateDensityScale(map, quantiles, p95) {
+  const expr = densityColorExpr(quantiles, p95);
   for (const resolution of HEX_RESOLUTIONS) {
     const sl = `hexes_res${resolution}`;
     try { map.setPaintProperty(`${sl}-fill`, 'fill-color', expr); } catch (_) {}
@@ -145,7 +172,7 @@ const GENUS_LABEL_FIELD = ['case',
 
 export function addMapLayers(map, tilesUrl) {
   const forestIconImage = buildForestIconImageExpr();
-  const initialDensityColor = densityColorExpr(INITIAL_P95);
+  const initialDensityColor = densityColorExpr(null, INITIAL_P95);
 
   map.addImage('letter-bg', createLetterBg(), { sdf: true });
   map.addSource('berlin-trees', { type: 'vector', url: tilesUrl });

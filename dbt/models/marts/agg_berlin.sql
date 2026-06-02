@@ -25,39 +25,45 @@ area_stats AS (
 ),
 res6_density AS (
     SELECT
+        to_json(PERCENTILE_CONT([0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0]) WITHIN GROUP (ORDER BY tree_density_km2)) AS quantiles,
         CAST(PERCENTILE_DISC(0.5)  WITHIN GROUP (ORDER BY tree_density_km2) AS INT) AS p50,
         CAST(PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY tree_density_km2) AS INT) AS p95
-    FROM {{ ref('agg_h3_res6') }} WHERE tree_density_km2 IS NOT NULL
+    FROM {{ ref('agg_h3_res6') }} WHERE tree_density_km2 IS NOT NULL AND forest_cover_pct <= 85
 ),
 res7_density AS (
     SELECT
+        to_json(PERCENTILE_CONT([0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0]) WITHIN GROUP (ORDER BY tree_density_km2)) AS quantiles,
         CAST(PERCENTILE_DISC(0.5)  WITHIN GROUP (ORDER BY tree_density_km2) AS INT) AS p50,
         CAST(PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY tree_density_km2) AS INT) AS p95
-    FROM {{ ref('agg_h3_res7') }} WHERE tree_density_km2 IS NOT NULL
+    FROM {{ ref('agg_h3_res7') }} WHERE tree_density_km2 IS NOT NULL AND forest_cover_pct <= 85
 ),
 res8_density AS (
     SELECT
+        to_json(PERCENTILE_CONT([0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0]) WITHIN GROUP (ORDER BY tree_density_km2)) AS quantiles,
         CAST(PERCENTILE_DISC(0.5)  WITHIN GROUP (ORDER BY tree_density_km2) AS INT) AS p50,
         CAST(PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY tree_density_km2) AS INT) AS p95
-    FROM {{ ref('agg_h3_res8') }} WHERE tree_density_km2 IS NOT NULL
+    FROM {{ ref('agg_h3_res8') }} WHERE tree_density_km2 IS NOT NULL AND forest_cover_pct <= 85
 ),
 res9_density AS (
     SELECT
+        to_json(PERCENTILE_CONT([0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0]) WITHIN GROUP (ORDER BY tree_density_km2)) AS quantiles,
         CAST(PERCENTILE_DISC(0.5)  WITHIN GROUP (ORDER BY tree_density_km2) AS INT) AS p50,
         CAST(PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY tree_density_km2) AS INT) AS p95
-    FROM {{ ref('agg_h3_res9') }} WHERE tree_density_km2 IS NOT NULL
+    FROM {{ ref('agg_h3_res9') }} WHERE tree_density_km2 IS NOT NULL AND forest_cover_pct <= 85
 ),
 bezirke_density AS (
     SELECT
+        to_json(PERCENTILE_CONT([0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0]) WITHIN GROUP (ORDER BY tree_density_km2)) AS quantiles,
         CAST(PERCENTILE_DISC(0.5)  WITHIN GROUP (ORDER BY tree_density_km2) AS INT) AS p50,
         CAST(PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY tree_density_km2) AS INT) AS p95
-    FROM {{ ref('agg_bezirke') }} WHERE tree_density_km2 IS NOT NULL
+    FROM {{ ref('agg_bezirke') }} WHERE tree_density_km2 IS NOT NULL AND forest_cover_pct <= 85
 ),
 ortsteile_density AS (
     SELECT
+        to_json(PERCENTILE_CONT([0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0]) WITHIN GROUP (ORDER BY tree_density_km2)) AS quantiles,
         CAST(PERCENTILE_DISC(0.5)  WITHIN GROUP (ORDER BY tree_density_km2) AS INT) AS p50,
         CAST(PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY tree_density_km2) AS INT) AS p95
-    FROM {{ ref('agg_ortsteile') }} WHERE tree_density_km2 IS NOT NULL
+    FROM {{ ref('agg_ortsteile') }} WHERE tree_density_km2 IS NOT NULL AND forest_cover_pct <= 85
 ),
 berlin_geom_25833 AS (
     SELECT 1 AS dummy_id, ST_Union_Agg(geometry) AS geometry
@@ -100,12 +106,12 @@ SELECT
     fh.forest_genus_4,     fh.forest_genus_4_share,
     fh.forest_genus_5,     fh.forest_genus_5_share,
     fh.forest_genus_other_share,
-    r6.p50  AS density_res6_p50,      r6.p95  AS density_res6_p95,
-    r7.p50  AS density_res7_p50,      r7.p95  AS density_res7_p95,
-    r8.p50  AS density_res8_p50,      r8.p95  AS density_res8_p95,
-    r9.p50  AS density_res9_p50,      r9.p95  AS density_res9_p95,
-    bz.p50  AS density_bezirke_p50,   bz.p95  AS density_bezirke_p95,
-    ot.p50  AS density_ortsteile_p50, ot.p95  AS density_ortsteile_p95,
+    r6.p50  AS density_res6_p50,      r6.p95  AS density_res6_p95,      r6.quantiles AS density_res6_quantiles,
+    r7.p50  AS density_res7_p50,      r7.p95  AS density_res7_p95,      r7.quantiles AS density_res7_quantiles,
+    r8.p50  AS density_res8_p50,      r8.p95  AS density_res8_p95,      r8.quantiles AS density_res8_quantiles,
+    r9.p50  AS density_res9_p50,      r9.p95  AS density_res9_p95,      r9.quantiles AS density_res9_quantiles,
+    bz.p50  AS density_bezirke_p50,   bz.p95  AS density_bezirke_p95,   bz.quantiles AS density_bezirke_quantiles,
+    ot.p50  AS density_ortsteile_p50, ot.p95  AS density_ortsteile_p95, ot.quantiles AS density_ortsteile_quantiles,
     bg.geometry
 FROM agg
 CROSS JOIN area_stats area
