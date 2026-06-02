@@ -66,16 +66,22 @@ map.on('load', async () => {
     })
     .catch(() => {});
 
-  const { getActiveMode, setActiveMode, syncToZoom } = createModeController(map, () => resetHighlight());
+  // When the displayed resolution changes (mode switch OR auto-mode zoom across
+  // a threshold) update the colorbar/density scale for that resolution and clear
+  // any stale highlight.
+  const { getActiveMode, setActiveMode, syncToZoom } = createModeController(map, (res) => {
+    resetHighlight();
+    updateColorbar(res);
+  });
 
   setupInfoCard(map, getPhylopicIndex, {
     onLatchChange: (latchState) => saveState({ latched: latchState }),
   });
   if (_saved.forestEnabled === false) setForestEnabled(false);
 
-  // onModeChange: update colorbar and density colour scale when user switches modes.
+  // onModeChange: the colorbar/scale is handled by the resolution-change callback
+  // above (which knows the resolved resolution, e.g. auto → res7/8/9).
   function onModeChange(mode) {
-    updateColorbar(mode);
     clearSelection();
     saveState({ mode });
   }
