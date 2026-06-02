@@ -1,11 +1,11 @@
-**[Open the map](https://ossssip.github.io/Berlin-trees-hex/)**
+**[Open the map](https://ossssip.github.io/Berlin-trees-h3/)**
 
-# Berlin Trees
+# Berlin Trees H3
 
-Another take on visualizing Berlin's trees. Tree data is aggregated onto an H3 hex grid and packed into a single PMTiles archive served to the browser.
+Another take on visualizing Berlin's street and park trees. Trees are aggregated onto an H3 hex grid you can switch across detail levels, with Berlin's boroughs, neighbourhoods, and forests available as separate layers. Hover or tap any cell for its tree count, density, and genus breakdown. It's all packed into a single PMTile file served straight from github pages.
 
-<a href="https://github.com/Ossssip/Berlin-trees-hex/blob/main/web/map.png">
-  <img src="https://github.com/Ossssip/Berlin-trees-hex/blob/main/web/map_thumb.png?raw=true" width="600" alt="Berlin trees map preview">
+<a href="https://github.com/Ossssip/Berlin-trees-h3/blob/main/web/map.png">
+  <img src="https://github.com/Ossssip/Berlin-trees-h3/blob/main/web/map_thumb.png?raw=true" width="600" alt="Berlin trees map preview">
 </a>
 
 ---
@@ -19,9 +19,8 @@ licences, and attributions.
 
 ### Tools
 
-WFS sources are fetched as Parquet, loaded into [DuckDB](https://duckdb.org/),
-and cleaned, unified, and aggregated by [dbt](https://www.getdbt.com/) into [H3](https://h3geo.org/) hexes and admin borders. Spatial work uses the
- library. Tiles are built with
+Data from the WFS endpoints is saved to Parquet files, loaded into [DuckDB](https://duckdb.org/),
+and cleaned, unified, and aggregated by [dbt](https://www.getdbt.com/) into [H3](https://h3geo.org/) hexes and admin boundaries. Geometry work (clipping, dissolves, reprojection) uses DuckDB's [spatial extension](https://duckdb.org/docs/extensions/spatial/overview). Tiles are built with
 [tippecanoe](https://github.com/felt/tippecanoe) into a
 [PMTiles](https://protomaps.com/docs/pmtiles) archive.
 
@@ -54,3 +53,39 @@ The pipeline runs weekly. `check_updates.py` queries WFS
 record counts first and the full run proceeds only if a source has changed;
 raw downloads are cached per record count, so unchanged sources are not
 re-fetched.
+
+
+## Running locally
+
+Requires **Python 3.12**, and — for the tile-build step —
+[tippecanoe](https://github.com/felt/tippecanoe) (the felt fork) and the
+[`pmtiles`](https://github.com/protomaps/go-pmtiles) CLI on your `PATH`.
+
+```bash
+# 1. Create the environment and install dependencies
+conda create -n berlin_trees python=3.12
+conda activate berlin_trees
+pip install -r requirements-ci.txt
+
+# 2. Fetch the raw WFS sources → one Parquet per source in data/raw/
+for s in alkis_ortsteile baumbestand_anlagen baumbestand_strassen gruen_berlin forstbetriebskarte; do
+  python pipeline/fetch_wfs.py --source "$s"
+done
+
+# 3. Load into DuckDB, then clean/unify/aggregate with dbt
+python pipeline/init_db.py
+dbt run --profiles-dir ./dbt --project-dir ./dbt
+
+# 4. Build the PMTiles archive → web/public/berlin_trees.pmtiles
+python pipeline/build_tiles.py
+
+# 5. Serve web/ with a static server that supports HTTP range requests
+#    (PMTiles is read via byte ranges), e.g.:
+npx http-server web -p 8000
+```
+
+Then open <http://localhost:8000>.
+
+> DuckDB allows only one connection at a time — close any open connection to
+> `data/berlin_trees.duckdb` (e.g. a Jupyter kernel) before running steps 3–4.
+> To rebuild from scratch, delete `data/berlin_trees.duckdb` first.

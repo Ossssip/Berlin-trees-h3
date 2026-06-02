@@ -8,9 +8,12 @@ import { loadState, saveState } from './mapState.js';
 const protocol = new pmtiles.Protocol();
 maplibregl.addProtocol('pmtiles', protocol.tile.bind(protocol));
 
-const DATA_SOURCES_URL = 'https://github.com/Ossssip/Berlin-trees-hex/blob/main/docs/data_sources.md';
+const REPO_URL = 'https://github.com/Ossssip/Berlin-trees-h3';
+const DATA_SOURCES_URL = `${REPO_URL}/blob/main/docs/data_sources.md`;
 const ATTRIBUTION = [
-  `Street &amp; park trees, forests, admin boundaries: <a href="${DATA_SOURCES_URL}" target="_blank" rel="noopener">Senatsverwaltung Berlin</a>, <a href="https://www.govdata.de/dl-de/zero-2-0" target="_blank" rel="noopener">dl-de/zero-2-0</a>`,
+  // This entry renders last; append the repo link to its end so "GitHub repo"
+  // is the final item on the attribution line (regardless of MapLibre's order).
+  `Street &amp; park trees, forests, admin boundaries: <a href="${DATA_SOURCES_URL}" target="_blank" rel="noopener">Senatsverwaltung Berlin</a>, <a href="https://www.govdata.de/dl-de/zero-2-0" target="_blank" rel="noopener">dl-de/zero-2-0</a> | <a href="${REPO_URL}" target="_blank" rel="noopener">GitHub repo</a>`,
   `Grün Berlin trees: <a href="${DATA_SOURCES_URL}" target="_blank" rel="noopener">Grün Berlin GmbH</a>, <a href="https://www.govdata.de/dl-de/by-2-0" target="_blank" rel="noopener">dl-de/by-2-0</a>`,
   `Tree silhouettes: <a href="https://www.phylopic.org" target="_blank" rel="noopener">PhyloPic</a>, <a href="${DATA_SOURCES_URL}#tree-silhouettes" target="_blank" rel="noopener">attributions</a>`,
 ];

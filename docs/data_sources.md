@@ -23,7 +23,6 @@ WFS endpoint for Grün Berlin: `https://gdi.berlin.de/services/wfs/baumbestand_g
 | Alters- und Bestandesstruktur der Wälder — Forstbetriebskarte 2014 (Hauptbaumarten) | Senatsverwaltung für Mobilität, Verkehr, Klimaschutz und Umwelt | [govdata.de](https://www.govdata.de/suche/daten/alters-und-bestandesstruktur-der-walder-forstbetriebskarte-2014-umweltatlas) | [dl-de/zero-2-0](https://www.govdata.de/dl-de/zero-2-0) |
 
 WFS endpoint: `https://gdi.berlin.de/services/wfs/ua_forstbetriebskarte_2014`  
-Two additional layers in the same service are not used: `a_mischbaumarten` (mixed species), `b_forstverwalt` (admin units).
 
 ---
 
@@ -31,17 +30,15 @@ Two additional layers in the same service are not used: `a_mischbaumarten` (mixe
 
 | Dataset | Provider | URL | License |
 |---|---|---|---|
-| ALKIS Berlin — Ortsteile (used for Ortsteile + Bezirke by dissolve) | Senatsverwaltung für Stadtentwicklung, Bauen und Wohnen | [govdata.de](https://www.govdata.de/suche/daten/alkis-berlin) | [dl-de/zero-2-0](https://www.govdata.de/dl-de/zero-2-0) |
+| ALKIS Berlin — Ortsteile (used for Ortsteile + Bezirke) | Senatsverwaltung für Stadtentwicklung, Bauen und Wohnen | [govdata.de](https://www.govdata.de/suche/daten/alkis-berlin) | [dl-de/zero-2-0](https://www.govdata.de/dl-de/zero-2-0) |
 
 WFS endpoint: `https://gdi.berlin.de/services/wfs/alkis_ortsteile`  
-Bezirke are derived by dissolving Ortsteile on the `bezirk` attribute — no separate Bezirke WFS source is fetched.
 
 ---
 
 ## Tree silhouettes
 
-Silhouettes are fetched at build time from [PhyloPic](https://www.phylopic.org) via the v2 API
-and stored in `web/public/icons/`. Some images are simplified and optimized. 26 genera have silhouettes; the rest use a letter fallback.
+Silhouettes of prevailing genera at each resolution level are fetched from [PhyloPic](https://www.phylopic.org) and stored in `web/public/icons/`. Some images are simplified and optimized. 
 
 | Genus | Contributor | License |
 |---|---|---|
