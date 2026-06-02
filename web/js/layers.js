@@ -397,47 +397,17 @@ export function addMapLayers(map, tilesUrl) {
     },
   });
 
-  // Selection highlight layers — solid thick outline on click-to-pin.
-  const SELECTED_PAINT = { 'line-color': '#fff', 'line-width': 3, 'line-opacity': 0.9 };
-  const HOVER_PAINT    = { 'line-color': '#fff', 'line-width': 3, 'line-opacity': 0.9 };
-
-  for (const resolution of HEX_RESOLUTIONS) {
-    map.addLayer({
-      id: `hexes_res${resolution}-selected`,
-      type: 'line',
-      source: 'berlin-trees',
-      'source-layer': `hexes_res${resolution}`,
-      filter: ['==', ['get', 'h3_index'], ''],
-      paint: SELECTED_PAINT,
-    });
-    map.addLayer({
-      id: `hexes_res${resolution}-hover`,
-      type: 'line',
-      source: 'berlin-trees',
-      'source-layer': `hexes_res${resolution}`,
-      filter: ['==', ['get', 'h3_index'], ''],
-      paint: HOVER_PAINT,
-    });
-  }
-
-  for (const admin of ['bezirke', 'ortsteile']) {
-    map.addLayer({
-      id: `admin_${admin}-selected`,
-      type: 'line',
-      source: 'berlin-trees',
-      'source-layer': `admin_${admin}`,
-      filter: ['==', ['get', 'area_id'], -1],
-      paint: SELECTED_PAINT,
-    });
-    map.addLayer({
-      id: `admin_${admin}-hover`,
-      type: 'line',
-      source: 'berlin-trees',
-      'source-layer': `admin_${admin}`,
-      filter: ['==', ['get', 'area_id'], -1],
-      paint: HOVER_PAINT,
-    });
-  }
+  // Hover/selection highlight: a GeoJSON source fed by querySourceFeatures
+  // (reads parsed tile data directly — no setFilter worker round-trip, so the
+  // highlight keeps pace with the cursor). The tile-clipped pieces are unioned
+  // in info.js (polygon-clipping) so the outline has no internal cut edges.
+  map.addSource('poly-highlight', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addLayer({
+    id: 'poly-highlight-line',
+    type: 'line',
+    source: 'poly-highlight',
+    paint: { 'line-color': '#ffffff', 'line-width': 2.5, 'line-opacity': 0.9 },
+  });
 
   // For individual tree points (not tile-clipped) keep a GeoJSON highlight circle.
   map.addSource('selected-tree', {

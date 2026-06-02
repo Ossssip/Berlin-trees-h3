@@ -2,7 +2,7 @@ import { setupControls } from './controls.js';
 import { registerMissingImagePlaceholder, loadPhylopicIcons, loadPhylopicIndex } from './icons.js';
 import { addMapLayers, updateGenusLabelFilter } from './layers.js';
 import { createModeController } from './mode.js';
-import { setupInfoCard, updateColorbar, clearSelection, setForestEnabled } from './info.js';
+import { setupInfoCard, updateColorbar, clearSelection, resetHighlight, setForestEnabled } from './info.js';
 import { loadState, saveState } from './mapState.js';
 
 const protocol = new pmtiles.Protocol();
@@ -66,7 +66,7 @@ map.on('load', async () => {
     })
     .catch(() => {});
 
-  const { getActiveMode, setActiveMode, syncToZoom } = createModeController(map);
+  const { getActiveMode, setActiveMode, syncToZoom } = createModeController(map, () => resetHighlight());
 
   setupInfoCard(map, getPhylopicIndex, {
     onLatchChange: (latchState) => saveState({ latched: latchState }),

@@ -24,11 +24,25 @@ export function applyRes(map, resolution) {
   }
 }
 
-export function createModeController(map) {
+export function createModeController(map, onResolutionChange) {
   let activeMode = 'auto';
+  let lastRes = null;
 
-  function _applyAll(mode, zoom) {
-    applyRes(map, resolveMode(mode, zoom));
+  // force=true re-applies layer visibility even if the resolution is unchanged
+  // (needed on an explicit mode switch); zoom events skip the work unless the
+  // resolved resolution actually changes, avoiding ~30 setLayoutProperty/frame.
+  function _applyAll(mode, zoom, force = false) {
+    const res = resolveMode(mode, zoom);
+    if (force || res !== lastRes) {
+      applyRes(map, res);
+    }
+    // Clear any latched/hover highlight when the displayed resolution changes
+    // (e.g. zooming across a threshold in auto mode) — the old polygon no
+    // longer corresponds to a visible feature.
+    if (res !== lastRes) {
+      lastRes = res;
+      onResolutionChange?.(res);
+    }
     // In auto mode trees coexist with res9 hexes starting at zoom 14.5.
     // Explicit 'trees' mode is handled by applyRes already.
     if (mode === 'auto') {
@@ -51,7 +65,7 @@ export function createModeController(map) {
   function setActiveMode(mode) {
     activeMode = mode;
     const zoom = map.getZoom();
-    _applyAll(mode, zoom);
+    _applyAll(mode, zoom, true);
 
     const track = document.getElementById('seg-track');
     const thumb = document.getElementById('seg-thumb');

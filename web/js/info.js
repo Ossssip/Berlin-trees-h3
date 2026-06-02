@@ -79,29 +79,49 @@ function _setInfoState(s) {
 // Hover highlight
 // ---------------------------------------------------------------------------
 
-function _clearHoverHighlight() {
-  if (!_map) return;
-  for (const r of [6, 7, 8, 9]) {
-    try { _map.setFilter(`hexes_res${r}-hover`, ['==', ['get', 'h3_index'], '']); } catch (_) {}
-  }
-  for (const a of ['bezirke', 'ortsteile']) {
-    try { _map.setFilter(`admin_${a}-hover`, ['==', ['get', 'area_id'], -1]); } catch (_) {}
+// Hover/selection highlight is fed by querySourceFeatures (reads parsed tile
+// data directly — no setFilter worker round-trip that lagged the outline) into
+// the poly-highlight GeoJSON layer.
+const _SRC = 'berlin-trees';
+const _EMPTY_FC = { type: 'FeatureCollection', features: [] };
+
+// A feature's full geometry as a FeatureCollection. The feature can be split
+// across several tiles; the clipped pieces are dissolved (polygon-clipping
+// union) into one polygon so the outline has no internal tile-clip edges.
+function _highlightData(layerId, props) {
+  if (!_map || !props) return null;
+  const sourceLayer = layerId.replace('-fill', '');
+  let filter;
+  if (layerId.startsWith('hexes_res')) filter = ['==', ['get', 'h3_index'], props.h3_index];
+  else if (layerId === 'admin_bezirke-fill' || layerId === 'admin_ortsteile-fill') filter = ['==', ['get', 'area_id'], props.area_id];
+  else return null;
+
+  const pieces = _map.querySourceFeatures(_SRC, { sourceLayer, filter });
+  if (pieces.length <= 1) return { type: 'FeatureCollection', features: pieces };
+
+  const pc = window.polygonClipping;
+  if (!pc) return { type: 'FeatureCollection', features: pieces };
+  try {
+    const geoms = pieces.map(f => f.geometry.coordinates);
+    const merged = pc.union(geoms[0], ...geoms.slice(1));
+    return { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'MultiPolygon', coordinates: merged } }] };
+  } catch (_) {
+    return { type: 'FeatureCollection', features: pieces };
   }
 }
 
-function _highlightHover(layerId, props) {
-  _clearHoverHighlight();
-  if (!_map) return;
-  if (layerId.startsWith('hexes_res')) {
-    const h3 = props.h3_index ?? '';
-    for (const r of [6, 7, 8, 9]) {
-      try { _map.setFilter(`hexes_res${r}-hover`, ['==', ['get', 'h3_index'], h3]); } catch (_) {}
-    }
-  } else if (layerId === 'admin_bezirke-fill') {
-    try { _map.setFilter('admin_bezirke-hover', ['==', ['get', 'area_id'], props.area_id]); } catch (_) {}
-  } else if (layerId === 'admin_ortsteile-fill') {
-    try { _map.setFilter('admin_ortsteile-hover', ['==', ['get', 'area_id'], props.area_id]); } catch (_) {}
-  }
+function _setHighlight(fc) {
+  try { _map?.getSource('poly-highlight')?.setData(fc ?? _EMPTY_FC); } catch (_) {}
+}
+
+function _clearHoverHighlight() {
+  if (_state === 'latched') return;   // keep the latched selection's highlight
+  _setHighlight(null);
+}
+
+function _highlightHover(layerId, feature) {
+  if (!_map || !feature) return;
+  _setHighlight(_highlightData(layerId, feature.properties));
 }
 
 // ---------------------------------------------------------------------------
@@ -304,40 +324,23 @@ function renderTreePointCard(props, phylopicIndex) {
 // Selection highlight
 // ---------------------------------------------------------------------------
 
-// Polygon selections use setFilter on the tile source layers so the outline
-// matches the actual full hex/admin geometry, not the tile-clipped fragment
-// that would come from e.features[0].geometry.
-
+// Polygon selection and hover share the poly-highlight GeoJSON layer (only one
+// is active at a time — hover is suppressed while latched). Tree points keep a
+// separate GeoJSON highlight circle.
 function _clearAllSelections() {
   if (!_map) return;
-  for (const r of [6, 7, 8, 9]) {
-    try { _map.setFilter(`hexes_res${r}-selected`, ['==', ['get', 'h3_index'], '']); } catch (_) {}
-  }
-  for (const a of ['bezirke', 'ortsteile']) {
-    try { _map.setFilter(`admin_${a}-selected`, ['==', ['get', 'area_id'], -1]); } catch (_) {}
-  }
-  const src = _map.getSource('selected-tree');
-  if (src) src.setData({ type: 'FeatureCollection', features: [] });
-  _clearHoverHighlight();
+  _setHighlight(null);
+  try { _map.getSource('selected-tree')?.setData(_EMPTY_FC); } catch (_) {}
 }
 
 function _highlightFeature(layerId, props, feature) {
   _clearAllSelections();
   if (!_map) return;
-
-  if (layerId.startsWith('hexes_res')) {
-    const h3 = props.h3_index ?? '';
-    for (const r of [6, 7, 8, 9]) {
-      try { _map.setFilter(`hexes_res${r}-selected`, ['==', ['get', 'h3_index'], h3]); } catch (_) {}
-    }
-  } else if (layerId === 'admin_bezirke-fill') {
-    try { _map.setFilter('admin_bezirke-selected', ['==', ['get', 'area_id'], props.area_id]); } catch (_) {}
-  } else if (layerId === 'admin_ortsteile-fill') {
-    try { _map.setFilter('admin_ortsteile-selected', ['==', ['get', 'area_id'], props.area_id]); } catch (_) {}
-  } else if (layerId === 'trees-circle') {
-    const src = _map.getSource('selected-tree');
-    if (src) src.setData({ type: 'FeatureCollection', features: [feature] });
+  if (layerId === 'trees-circle') {
+    if (feature) _map.getSource('selected-tree')?.setData({ type: 'FeatureCollection', features: [feature] });
+    return;
   }
+  _setHighlight(_highlightData(layerId, props));
 }
 
 // ---------------------------------------------------------------------------
@@ -416,6 +419,20 @@ export function clearSelection() {
   _currentCard = null;
   _state = 'idle';
   _clearAllSelections();
+  showIdle();
+}
+
+// Drop any active highlight — latched selection OR a transient hover outline —
+// used when the displayed resolution changes so a stale outline doesn't linger.
+export function resetHighlight() {
+  if (_state === 'idle') {
+    _clearHoverHighlight();   // clear any stray hover outline left mid-zoom
+    return;
+  }
+  _latchedId = null;
+  _currentCard = null;
+  _state = 'idle';
+  _clearAllSelections();      // clears selection filters and hover
   showIdle();
 }
 
@@ -532,14 +549,14 @@ export function setupInfoCard(map, getPhylopicIndex, { onLatchChange } = {}) {
       if (!feature) return;
       map.getCanvas().style.cursor = 'pointer';
       const props = feature.properties;
-      const id = _featureId(props);
+      const id = feature.id ?? _featureId(props);
       if (_state === 'hover' && _latchedId === id) return;
       _latchedId = id;
       const layerId = feature.layer.id;
       const type = _layerType(layerId);
       _state = 'hover';
       _currentCard = { props, layerId, type };
-      _highlightHover(layerId, props);
+      _highlightHover(layerId, feature);
       _setInfoState('hover');
       requestAnimationFrame(() => {
         if (_state !== 'hover' || _latchedId !== id) return;
@@ -563,7 +580,7 @@ export function setupInfoCard(map, getPhylopicIndex, { onLatchChange } = {}) {
       const props = feature.properties;
       const layerId = feature.layer.id;
       const type = _layerType(layerId);
-      const id = _featureId(props);
+      const id = feature.id ?? _featureId(props);
 
       if (_state === 'latched' && _latchedId === id) {
         _latchedId = null;
@@ -591,14 +608,14 @@ export function setupInfoCard(map, getPhylopicIndex, { onLatchChange } = {}) {
       map.getCanvas().style.cursor = 'pointer';
       const feature = e.features[0];
       const props = feature.properties;
-      const id = _featureId(props);
+      const id = feature.id ?? _featureId(props);
       if (_state === 'hover' && _latchedId === id) return;
       _latchedId = id;
       const type = _layerType(layerId);
       _state = 'hover';
       _currentCard = { props, layerId, type };
       // Highlight first so MapLibre can paint it on the next frame
-      _highlightHover(layerId, props);
+      _highlightHover(layerId, feature);
       _setInfoState('hover');
       // Defer card DOM update so it doesn't block the map repaint
       requestAnimationFrame(() => {
@@ -623,7 +640,7 @@ export function setupInfoCard(map, getPhylopicIndex, { onLatchChange } = {}) {
       const feature = e.features[0];
       const props = feature.properties;
       const type = _layerType(layerId);
-      const id = _featureId(props);
+      const id = feature.id ?? _featureId(props);
 
       if (_state === 'latched' && _latchedId === id) {
         _latchedId = null;

@@ -8,22 +8,26 @@ const DUAL_FOREST_BAND = ['all', ['>=', fcp, 33], ['<=', fcp, 67]];
 
 let forestsEnabled = true;
 let _onForestChange = null;
+let _lastShowDetailed = null;
 
-function refreshForests(map) {
-  const zoom = map.getZoom();
-  const showDetailed = zoom >= DETAIL_FOREST_ZOOM;
-
+// Zoom-dependent: swap the dissolved "union" forest fill for the detailed
+// per-stand fill at the detail zoom. Only touches the map when the threshold is
+// actually crossed (force=true ignores the cache, e.g. on a forest toggle).
+function applyForestFill(map, force = false) {
+  const showDetailed = map.getZoom() >= DETAIL_FOREST_ZOOM;
+  if (!force && showDetailed === _lastShowDetailed) return;
+  _lastShowDetailed = showDetailed;
   map.setLayoutProperty('forests-fill', 'visibility', forestsEnabled && showDetailed ? 'visible' : 'none');
   map.setLayoutProperty('forests-outline', 'visibility', forestsEnabled && showDetailed ? 'visible' : 'none');
   map.setLayoutProperty('forests-union-fill', 'visibility', forestsEnabled && !showDetailed ? 'visible' : 'none');
   map.setLayoutProperty('forests-union-outline', 'visibility', forestsEnabled && !showDetailed ? 'visible' : 'none');
+}
 
+// Toggle-dependent only (no zoom term): the forest icon opacity/offset. Applied
+// on init and when the forest toggle flips — never per zoom frame.
+function applyForestIcons(map) {
   for (const resolution of HEX_RESOLUTIONS) {
     const sourceLayer = `hexes_res${resolution}`;
-
-    map.setPaintProperty(`${sourceLayer}-icon-trees`, 'icon-opacity',
-      ['case', ['>', fcp, 67], 0, 0.85],
-    );
     map.setPaintProperty(`${sourceLayer}-icon-forest`, 'icon-opacity',
       forestsEnabled ? ['case', ['<', fcp, 33], 0, 0.85] : 0,
     );
@@ -33,6 +37,11 @@ function refreshForests(map) {
         : ['literal', [0, 0]],
     );
   }
+}
+
+function refreshForests(map) {
+  applyForestFill(map, true);
+  applyForestIcons(map);
 }
 
 export function setupControls(map, setActiveMode, getActiveMode, onModeChange, initialState = {}) {
@@ -106,5 +115,5 @@ export function setupControls(map, setActiveMode, getActiveMode, onModeChange, i
     _onForestChange?.(forestsEnabled);
   });
 
-  map.on('zoom', () => refreshForests(map));
+  map.on('zoom', () => applyForestFill(map));
 }
