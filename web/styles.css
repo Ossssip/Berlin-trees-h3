@@ -436,11 +436,10 @@ body { font-family: sans-serif; }
   }
   #ctrl-info::-webkit-scrollbar { display: none; }
 
-  /* Info card and colorbar: only show when a polygon is latched */
-  #ctrl-info[data-state="idle"],
+  /* Colorbar is always visible. The info card shows a compact summary on idle
+     (title + stats only), the full card when latched, and hides mid-hover. */
   #ctrl-info[data-state="hover"] { display: none; }
-  #ctrl-colorbar[data-state="idle"],
-  #ctrl-colorbar[data-state="hover"] { display: none; }
+  #ctrl-info[data-state="idle"] .card-section { display: none; }
 
   /* Title/controls row stays fixed while card body scrolls */
   #ctrl-info > .card-header:first-child {

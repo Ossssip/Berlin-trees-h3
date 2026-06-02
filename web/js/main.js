@@ -33,11 +33,14 @@ async function resolveTilesUrl() {
 
 const _saved = loadState();
 
+// Berlin extent — fit the whole city to the screen on load (desktop + mobile).
+const BERLIN_BOUNDS = [[13.088, 52.338], [13.761, 52.675]];
+
 const map = new maplibregl.Map({
   container: 'map',
   style: 'https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json',
-  center: [13.405, 52.52],
-  zoom:   10.6,
+  bounds: BERLIN_BOUNDS,
+  fitBoundsOptions: { padding: 16 },
   attributionControl: false,
 });
 
