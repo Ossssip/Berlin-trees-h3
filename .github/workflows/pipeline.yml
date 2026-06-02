@@ -122,7 +122,9 @@ jobs:
 
       - name: Fetch
         id: fetch
-        if: steps.cache.outputs.cache-hit != 'true'
+        # A manual run reaches the fetch job only with start_from=fetch, so force
+        # a fresh download even if a (possibly empty-count) cache entry exists.
+        if: steps.cache.outputs.cache-hit != 'true' || github.event_name == 'workflow_dispatch'
         continue-on-error: true
         run: python pipeline/fetch_wfs.py --source ${{ matrix.source }}
 
@@ -138,7 +140,7 @@ jobs:
       - name: Classify outcome
         id: verify
         run: |
-          if [ "${{ steps.cache.outputs.cache-hit }}" = "true" ] || [ "${{ steps.fetch.outcome }}" = "success" ]; then
+          if [ "${{ steps.fetch.outcome }}" = "success" ] || [ "${{ steps.fetch.outcome }}" = "skipped" ]; then
             echo "stale=false" >> "$GITHUB_OUTPUT"
             echo "${{ matrix.source }}: fresh data"
           elif [ -f "data/raw/${{ matrix.source }}.parquet" ]; then
