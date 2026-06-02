@@ -4,7 +4,7 @@
 
 Another take on visualizing Berlin's trees. Tree data is aggregated onto an H3 hex grid and packed into a single PMTiles archive served to the browser.
 
-<a href="https://github.com/Ossssip/Berlin-trees-hex/blob/main/web/map.png?raw=true">
+<a href="https://github.com/Ossssip/Berlin-trees-hex/blob/main/web/map.png">
   <img src="https://github.com/Ossssip/Berlin-trees-hex/blob/main/web/map_thumb.png?raw=true" width="600" alt="Berlin trees map preview">
 </a>
 
