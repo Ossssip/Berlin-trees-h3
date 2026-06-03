@@ -164,8 +164,11 @@ function genusIcon(genus, phylopicIndex) {
   const lower = genus?.toLowerCase?.();
   if (lower && phylopicIndex?.[lower]) {
     const uri = getGenusDataUri(lower);
-    const src = uri ?? `public/icons/${lower}.svg`;
-    return `<img class="bar-icon" src="${src}" alt="${lower}">`;
+    // Escape apostrophes so the data-URI is safe inside url('…').
+    const src = (uri ?? `public/icons/${lower}.svg`).replace(/'/g, '%27');
+    // Masked span so the silhouette is filled with the bar colour instead of the
+    // raw black PhyloPic art.
+    return `<span class="bar-icon bar-icon-img" style="-webkit-mask-image:url('${src}');mask-image:url('${src}')"></span>`;
   }
   const letter = genus ? genus[0].toUpperCase() : '?';
   return `<span class="bar-icon bar-icon-letter">${letter}</span>`;
@@ -338,9 +341,12 @@ function renderHexCard(props, layerType, phylopicIndex, expanded, latched) {
     : !expanded ? 4
     : moreThan10 ? 9 : totalGenera;
 
-  return `${header}
-    ${renderTreeChart(props, phylopicIndex, maxRows, expandBtn)}
-    ${_forestEnabled ? renderForestChart(props, phylopicIndex) : ''}`;
+  const treeSection = renderTreeChart(props, phylopicIndex, maxRows, expandBtn);
+  const forestSection = _forestEnabled ? renderForestChart(props, phylopicIndex) : '';
+  const body = (treeSection || forestSection)
+    ? `${treeSection}${forestSection}`
+    : '<div class="card-section"><div class="card-empty"><span>No trees in the selected area</span><span class="section-controls"></span></div></div>';
+  return `${header}${body}`;
 }
 
 function renderTreePointCard(props, phylopicIndex) {

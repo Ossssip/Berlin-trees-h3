@@ -310,6 +310,24 @@ body { font-family: sans-serif; }
   filter: invert(0.8);
   opacity: 0.85;
 }
+/* Silhouette filled with the bar colour (street/park green; forest green). */
+.bar-icon-img {
+  filter: none;
+  opacity: 0.95;
+  background-color: #52a152;
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-position: center; mask-position: center;
+  -webkit-mask-size: contain; mask-size: contain;
+}
+.bar-forest .bar-icon-img { background-color: #2a5e30; }
+
+.card-empty {
+  font-size: 13px;
+  color: #888;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 /* Letter fallback: styled circle with the first letter */
 .bar-icon-letter {
   display: inline-flex;
@@ -318,14 +336,19 @@ body { font-family: sans-serif; }
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: rgba(255,255,255,0.1);
-  border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(82,161,82,0.14);
+  border: 1px solid rgba(82,161,82,0.45);
   font-size: 10px;
   font-weight: 600;
-  color: #bbb;
+  color: #52a152;
   filter: none;
   opacity: 1;
   font-family: sans-serif;
+}
+.bar-forest .bar-icon-letter {
+  background: rgba(42,94,48,0.18);
+  border-color: rgba(42,94,48,0.55);
+  color: #6fae74;
 }
 
 .card-controls {
