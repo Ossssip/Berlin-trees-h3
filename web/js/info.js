@@ -190,7 +190,24 @@ function _barRow(genus, share, count, phylopicIndex, isForest) {
     </div>`;
 }
 
-function renderTreeChart(props, phylopicIndex, maxRows) {
+// Cell summary stats: tree count, density, and area (non-forest area when the
+// cell is mostly forest, since density is computed per non-forest km²).
+function _cellStats(props) {
+  const trees = Number(props.tree_count) || 0;
+  const density = props.tree_density_km2 != null
+    ? `${Number(props.tree_density_km2).toFixed(0)} trees/km²` : null;
+  const fcp = Number(props.forest_cover_pct) || 0;
+  const area = (fcp > 10 && props.non_forest_area_km2 != null)
+    ? `${Number(props.non_forest_area_km2).toFixed(2)} km² non-forest`
+    : (props.berlin_area_km2 ? `${Number(props.berlin_area_km2).toFixed(2)} km²` : null);
+  return [
+    trees ? `${trees.toLocaleString()} ${trees === 1 ? 'tree' : 'trees'}` : null,
+    density,
+    area,
+  ].filter(Boolean);
+}
+
+function renderTreeChart(props, phylopicIndex, maxRows, controlsHtml = '') {
   const rows = [];
   for (let i = 1; i <= maxRows; i++) {
     const genus = props[`tree_genus_${i}`];
@@ -227,7 +244,10 @@ function renderTreeChart(props, phylopicIndex, maxRows) {
         <div class="bar-pct">${Number(otherShare).toFixed(1)}%<span class="bar-count">${otherCount.toLocaleString()}</span></div>
        </div>` : '';
 
-  return `<div class="card-section"><div class="card-section-title">Street and park trees</div>${rows.join('')}${otherRow}</div>`;
+  const stats = _cellStats(props);
+  const statsRow = `<div class="card-stats">${stats.map(s => `<span>${s}</span>`).join('')}</div>`;
+  const title = `<div class="card-section-title"><span>Street and park trees</span><span class="section-controls">${controlsHtml}</span></div>`;
+  return `<div class="card-section">${title}${statsRow}${rows.join('')}${otherRow}</div>`;
 }
 
 function renderForestChart(props, phylopicIndex) {
@@ -294,20 +314,6 @@ function renderDatasetCard(summary, phylopicIndex) {
 }
 
 function renderHexCard(props, layerType, phylopicIndex, expanded, latched) {
-  const trees = Number(props.tree_count) || 0;
-  const density = props.tree_density_km2 != null
-    ? `${Number(props.tree_density_km2).toFixed(0)} trees/km²` : '';
-  const stats = [
-    trees ? `${trees.toLocaleString()} ${trees === 1 ? 'tree' : 'trees'}` : null,
-    density || null,
-    (() => {
-      const fcp = Number(props.forest_cover_pct) || 0;
-      if (fcp > 10 && props.non_forest_area_km2 != null)
-        return `${Number(props.non_forest_area_km2).toFixed(2)} km² non-forest`;
-      return props.berlin_area_km2 ? `${Number(props.berlin_area_km2).toFixed(2)} km²` : null;
-    })(),
-  ].filter(Boolean);
-
   // Count how many genera slots are populated (1–10)
   let totalGenera = 0;
   for (let i = 1; i <= 10; i++) {
@@ -322,9 +328,10 @@ function renderHexCard(props, layerType, phylopicIndex, expanded, latched) {
     ? `<button class="expand-btn">${expanded ? 'less ↑' : 'more ↓'}</button>`
     : '';
 
-  const header = props.area_name
-    ? `<div class="card-header"><div class="card-title">${props.area_name}</div>${expandBtn}</div>`
-    : expandBtn ? `<div class="card-header card-header-end">${expandBtn}</div>` : '';
+  // Area name (admin cards) stays as the card title; the expand/close controls
+  // ride in the "Street and park trees" section title (rendered by
+  // renderTreeChart, with the close button added by showCard).
+  const header = props.area_name ? `<div class="card-title">${props.area_name}</div>` : '';
 
   // maxRows: ≤5 genera → show all; short → 4+other; expanded → all or 9+other if >10
   const maxRows = !hasMore ? totalGenera
@@ -332,8 +339,7 @@ function renderHexCard(props, layerType, phylopicIndex, expanded, latched) {
     : moreThan10 ? 9 : totalGenera;
 
   return `${header}
-    <div class="card-stats">${stats.map(s => `<span>${s}</span>`).join('')}</div>
-    ${renderTreeChart(props, phylopicIndex, maxRows)}
+    ${renderTreeChart(props, phylopicIndex, maxRows, expandBtn)}
     ${_forestEnabled ? renderForestChart(props, phylopicIndex) : ''}`;
 }
 
@@ -396,15 +402,13 @@ function showCard(html, { showClose = false } = {}) {
     closeBtn.setAttribute('aria-label', 'Close');
     closeBtn.textContent = '✕';
 
-    const expandBtn = el.querySelector('.expand-btn');
-    if (expandBtn) {
-      // Keep expand + close always adjacent regardless of title width
-      const controls = document.createElement('div');
-      controls.className = 'card-controls';
-      expandBtn.parentNode.insertBefore(controls, expandBtn);
-      controls.appendChild(expandBtn);
+    // Prefer the section-title controls slot (next to the expand button) so the
+    // close button sits beside "Street and park trees".
+    const controls = el.querySelector('.section-controls');
+    if (controls) {
       controls.appendChild(closeBtn);
     } else {
+      // Cards without a tree section (e.g. a single tree point): top-right.
       const header = el.querySelector('.card-header');
       if (header) {
         header.appendChild(closeBtn);

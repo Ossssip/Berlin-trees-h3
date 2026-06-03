@@ -190,9 +190,9 @@ export function addMapLayers(map, tilesUrl) {
     });
   }
 
-  // 2× supersampled (pixelRatio 2) → 5 CSS-px spacing, 2.5-px radius, smooth round dots
-  map.addImage('forest-dots', createDotPattern('#13321a', 10, 5, 10), { pixelRatio: 2 });
-  const dotPattern = 'forest-dots';
+  // Forest fill: deep-green diagonal hatch pattern.
+  map.addImage('forest-hatch', createHatchPattern('#13321a', 11, 3));
+  const forestPattern = 'forest-hatch';
 
   // Pass 2: hex outlines + centroids
   for (const resolution of HEX_RESOLUTIONS) {
@@ -356,7 +356,7 @@ export function addMapLayers(map, tilesUrl) {
     'source-layer': 'forests_union',
     layout: { visibility: 'visible' },
     paint: {
-      'fill-pattern': dotPattern,
+      'fill-pattern': forestPattern,
       'fill-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0.7, 15, 0],
     },
   });
@@ -377,7 +377,7 @@ export function addMapLayers(map, tilesUrl) {
     'source-layer': 'forests',
     layout: { visibility: 'none' },
     paint: {
-      'fill-pattern': dotPattern,
+      'fill-pattern': forestPattern,
       'fill-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0, 15, 0.7],
     },
   });

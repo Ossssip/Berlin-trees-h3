@@ -2,7 +2,7 @@
 
 # Berlin Trees H3
 
-Another take on visualizing Berlin's street and park trees. Trees are aggregated onto an H3 hex grid you can switch across detail levels, with Berlin's boroughs, neighbourhoods, and forests available as separate layers. Hover or tap any cell for its tree count, density, and genus breakdown. It's all packed into a single PMTile file served straight from github pages.
+Another take on visualizing Berlin's street and park trees. Trees are aggregated onto an H3 hex grid you can switch across detail levels, with Berlin's boroughs, neighbourhoods, and forests available as separate layers. Hover or tap any cell for its tree count, density, and genus breakdown. It's all packed into a single PMTile file serving required data via partial requests.
 
 <a href="https://github.com/Ossssip/Berlin-trees-h3/blob/main/web/map.png">
   <img src="https://github.com/Ossssip/Berlin-trees-h3/blob/main/web/map_thumb.png?raw=true" width="600" alt="Berlin trees map preview">
@@ -57,9 +57,8 @@ re-fetched.
 
 ## Running locally
 
-Requires **Python 3.12**, and — for the tile-build step —
-[tippecanoe](https://github.com/felt/tippecanoe) (the felt fork) and the
-[`pmtiles`](https://github.com/protomaps/go-pmtiles) CLI on your `PATH`.
+Requires [tippecanoe](https://github.com/felt/tippecanoe) and the
+[`pmtiles`](https://github.com/protomaps/go-pmtiles) CLI for the tile-build step.
 
 ```bash
 # 1. Create the environment and install dependencies
