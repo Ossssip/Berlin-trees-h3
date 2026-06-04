@@ -1,22 +1,22 @@
 {
   "alkis_ortsteile": {
     "count": 97,
-    "last_checked": "2026-06-04T16:39:26.002642+00:00"
+    "last_checked": "2026-06-04T16:50:45.271288+00:00"
   },
   "baumbestand_anlagen": {
     "count": 527780,
-    "last_checked": "2026-06-04T16:39:26.002642+00:00"
+    "last_checked": "2026-06-04T16:50:45.271288+00:00"
   },
   "baumbestand_strassen": {
     "count": 434765,
-    "last_checked": "2026-06-04T16:39:26.002642+00:00"
+    "last_checked": "2026-06-04T16:50:45.271288+00:00"
   },
   "gruen_berlin": {
     "count": 26017,
-    "last_checked": "2026-06-04T16:39:26.002642+00:00"
+    "last_checked": "2026-06-04T16:50:45.271288+00:00"
   },
   "forstbetriebskarte": {
     "count": 11486,
-    "last_checked": "2026-06-04T16:39:26.002642+00:00"
+    "last_checked": "2026-06-04T16:50:45.271288+00:00"
   }
 }
