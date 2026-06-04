@@ -58,7 +58,7 @@ async function readBundleManifest(url) {
 
 // Register one pmtiles archive per bundle entry; returns { sourceName: 'pmtiles://name' }.
 async function resolveSources() {
-  const pagesHttp = new URL('../public/berlin_trees.pmtiles', import.meta.url).href;
+  const pagesHttp = new URL('../public/berlin_trees.pmtiles.bundle', import.meta.url).href;
   let url = pagesHttp;
   let info;
   try {

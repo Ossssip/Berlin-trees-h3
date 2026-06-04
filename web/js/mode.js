@@ -42,12 +42,13 @@ function _clearPendingHide(map) {
   if (_hideRender) { map.off('render', _hideRender); _hideRender = null; }
 }
 
-// Switch the visible resolution without ever drawing anything half-loaded: the
-// new fill is revealed at opacity 0 (invisible, but enough to fetch its tiles)
-// while its outline/labels/icons stay hidden, and the old resolution stays fully
-// on screen. Only once the new source is *fully* loaded for the viewport do we
-// show the new layers and hide the old ones — an instant swap of fully-rendered
-// tiles, no crossfade.
+// Switch the visible resolution with a double-buffered swap:
+//   1. reveal the new fill but keep it fully transparent, so its tiles are
+//      fetched and painted behind the still-visible old resolution;
+//   2. once the new source has finished loading the viewport, set the new fill to
+//      its nominal opacity (reveal it);
+//   3. drop the old resolution one frame LATER — after the new one has actually
+//      painted — so there is never a frame where neither is visible.
 export function applyRes(map, resolution) {
   const key = String(resolution);
   _clearPendingHide(map);
@@ -56,8 +57,8 @@ export function applyRes(map, resolution) {
   const targetLayers = RES_LAYERS[key] || [];
   const newFill = targetLayers.find((id) => id.endsWith('-fill'));
 
-  // Old layers to hide once the new resolution is ready; trees-circle off now
-  // (it is re-shown explicitly for auto mode and never causes the resolution-swap flicker).
+  // Old layers to remove once the new resolution is drawn; trees-circle off now
+  // (it is re-shown explicitly for auto mode and never causes the swap flicker).
   const toHide = [];
   for (const [k, layers] of Object.entries(RES_LAYERS)) {
     if (k === key) continue;
@@ -67,8 +68,9 @@ export function applyRes(map, resolution) {
     }
   }
 
-  // Start loading the new source. With a fill, keep it invisible (opacity 0) and
-  // its overlays hidden until ready; without one (trees mode) just reveal it.
+  // Show the new fill transparently to drive its load; keep its overlays hidden
+  // until the swap so the old resolution stays clean. (trees mode: no fill, just
+  // reveal it.)
   if (newFill) {
     _setFillOpacity(map, newFill, 0);
     _setVisible(map, newFill, true);
@@ -77,28 +79,37 @@ export function applyRes(map, resolution) {
   }
 
   const newSource = newFill ? map.getLayer(newFill)?.source : null;
-  const ready = () => {
-    if (!newSource) return true;
+  // "drawn" = the new source has loaded the whole viewport (isSourceLoaded) AND at
+  // least one of its tiles has actually rendered. The second clause is essential:
+  // immediately after showing the layer isSourceLoaded is vacuously true (no tiles
+  // requested yet), so without it we'd swap before anything loaded and flash the
+  // bare basemap.
+  const drawn = () => {
+    if (!newSource || !newFill) return true;
     try {
       return map.isSourceLoaded(newSource) &&
         map.queryRenderedFeatures({ layers: [newFill] }).length > 0;
     } catch (_) { return true; }
   };
 
-  const commit = () => {
+  const swap = () => {
     if (token !== _hideToken) return;   // superseded by a newer switch
     _clearPendingHide(map);
     if (newFill) {
-      _setFillOpacity(map, newFill, FILL_OPACITY);
+      _setFillOpacity(map, newFill, FILL_OPACITY);          // reveal new fill
       for (const layerId of targetLayers) _setVisible(map, layerId, true);
     }
-    for (const layerId of toHide) _setVisible(map, layerId, false);
+    // Hide the old layers only after the new one has had a frame to paint.
+    requestAnimationFrame(() => {
+      if (token !== _hideToken) return;
+      for (const layerId of toHide) _setVisible(map, layerId, false);
+    });
   };
 
-  if (ready()) { commit(); return; }
-  _hideRender = () => { if (ready()) commit(); };
+  if (drawn()) { swap(); return; }
+  _hideRender = () => { if (drawn()) swap(); };
   map.on('render', _hideRender);
-  _hideTimer = setTimeout(commit, 1500);   // fallback: never keep both forever
+  _hideTimer = setTimeout(swap, 2000);   // fallback: never keep both forever
 }
 
 export function createModeController(map, onResolutionChange) {
