@@ -38,7 +38,7 @@ jobs:
         run: |
           mkdir -p web/public
           gh release download data-latest \
-            --pattern berlin_trees.pmtiles \
+            --pattern berlin_trees.pmtiles.bundle \
             --dir web/public --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

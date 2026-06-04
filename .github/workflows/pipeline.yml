@@ -387,7 +387,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload PMTiles to release
-        run: gh release upload data-latest web/public/berlin_trees.pmtiles --clobber
+        run: gh release upload data-latest web/public/berlin_trees.pmtiles.bundle --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
