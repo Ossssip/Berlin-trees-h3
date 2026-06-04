@@ -1,4 +1,4 @@
-import { HEX_RESOLUTIONS } from './config.js';
+import { H3_RESOLUTIONS } from './config.js';
 
 const DETAIL_FOREST_ZOOM = 15;
 
@@ -23,13 +23,26 @@ function applyForestFill(map, force = false) {
   map.setLayoutProperty('forests-union-outline', 'visibility', forestsEnabled && !showDetailed ? 'visible' : 'none');
 }
 
-// Toggle-dependent only (no zoom term): the forest icon opacity/offset. Applied
-// on init and when the forest toggle flips — never per zoom frame.
+// Toggle-dependent only (no zoom term): the forest/tree icon opacity/offset.
+// Applied on init and when the forest toggle flips — never per zoom frame.
+// When forests are enabled, the street-tree silhouette (and its letter-fallback
+// label) is hidden in forest-dominated cells (forest_cover > 67%) so the forest
+// icon reads cleanly. When forests are disabled there is no forest icon, so show
+// the street-tree marker everywhere instead of leaving those cells blank.
 function applyForestIcons(map) {
-  for (const resolution of HEX_RESOLUTIONS) {
-    const sourceLayer = `hexes_res${resolution}`;
+  for (const resolution of H3_RESOLUTIONS) {
+    const sourceLayer = `h3_res${resolution}`;
     map.setPaintProperty(`${sourceLayer}-icon-forest`, 'icon-opacity',
       forestsEnabled ? ['case', ['<', fcp, 33], 0, 0.85] : 0,
+    );
+    map.setPaintProperty(`${sourceLayer}-icon-trees`, 'icon-opacity',
+      forestsEnabled ? ['case', ['>', fcp, 67], 0, 0.85] : 0.85,
+    );
+    map.setPaintProperty(`${sourceLayer}-label-genus`, 'icon-opacity',
+      forestsEnabled ? ['case', ['>', fcp, 67], 0, 0.12] : 0.12,
+    );
+    map.setPaintProperty(`${sourceLayer}-label-genus`, 'text-opacity',
+      forestsEnabled ? ['case', ['>', fcp, 67], 0, 0.85] : 0.85,
     );
     map.setLayoutProperty(`${sourceLayer}-icon-trees`, 'icon-offset',
       forestsEnabled
@@ -59,11 +72,11 @@ export function setupControls(map, setActiveMode, getActiveMode, onModeChange, i
     onModeChange?.('auto');
   });
 
-  // Position and reveal the hex-block highlight and auto button
+  // Position and reveal the H3-block highlight and auto button
   requestAnimationFrame(() => {
     const h6Btn    = track.querySelector('[data-mode="6"]');
     const treesBtn = track.querySelector('[data-mode="trees"]');
-    const highlight = document.getElementById('seg-hex-highlight');
+    const highlight = document.getElementById('seg-h3-highlight');
     const autoBtn   = document.getElementById('btn-auto');
     const header    = document.getElementById('ctrl-detail-header');
 
@@ -77,8 +90,8 @@ export function setupControls(map, setActiveMode, getActiveMode, onModeChange, i
     if (h6Btn && treesBtn && autoBtn && header) {
       const h6Rect    = h6Btn.getBoundingClientRect();
       const treesRect = treesBtn.getBoundingClientRect();
-      const hexMidX   = (h6Rect.left + treesRect.right) / 2;
-      autoBtn.style.left    = `${hexMidX - header.getBoundingClientRect().left}px`;
+      const h3MidX   = (h6Rect.left + treesRect.right) / 2;
+      autoBtn.style.left    = `${h3MidX - header.getBoundingClientRect().left}px`;
       autoBtn.style.opacity = '1';
     }
 

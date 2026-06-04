@@ -1,5 +1,6 @@
-# PMTiles — hosted on GitHub Releases, too large for git
+# PMTiles bundle — hosted on GitHub Releases, too large for git
 *.pmtiles
+*.pmtiles.bundle
 
 # DVC pipeline outputs
 data/raw/

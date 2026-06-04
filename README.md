@@ -2,7 +2,7 @@
 
 # Berlin Trees H3
 
-Another take on visualizing Berlin's street and park trees. Trees are aggregated onto an H3 hex grid you can switch across detail levels, with Berlin's boroughs, neighbourhoods, and forests available as separate layers. Hover or tap any cell for its tree count, density, and genus breakdown. It's all packed into a single PMTile file serving required data via partial requests.
+Another take on visualizing Berlin's street and park trees. Trees are aggregated into H3 hex grids, Berlin's boroughs and neighbourhoods; forests are available as a separate layer. Hover or tap any cell for its tree count, density, and genus breakdown. It's all packed into a single[\*](docs/pmtiles_bundling.md) PMTile file serving required data via partial requests.
 
 <a href="https://github.com/Ossssip/Berlin-trees-h3/blob/main/web/map.png">
   <img src="https://github.com/Ossssip/Berlin-trees-h3/blob/main/web/map_thumb.png?raw=true" width="600" alt="Berlin trees map preview">
@@ -20,7 +20,7 @@ licences, and attributions.
 ### Tools
 
 Data from the WFS endpoints is saved to Parquet files, loaded into [DuckDB](https://duckdb.org/),
-and cleaned, unified, and aggregated by [dbt](https://www.getdbt.com/) into [H3](https://h3geo.org/) hexes and admin boundaries. Geometry work (clipping, dissolves, reprojection) uses DuckDB's [spatial extension](https://duckdb.org/docs/extensions/spatial/overview). Tiles are built with
+and cleaned, unified, and aggregated by [dbt](https://www.getdbt.com/) into [H3](https://h3geo.org/) cells and admin boundaries. Geometry work (clipping, dissolves, reprojection) uses DuckDB's [spatial extension](https://duckdb.org/docs/extensions/spatial/overview). Tiles are built with
 [tippecanoe](https://github.com/felt/tippecanoe) into a
 [PMTiles](https://protomaps.com/docs/pmtiles) archive.
 
@@ -40,11 +40,12 @@ fetch_wfs.py         ← paginated WFS download → one Parquet file per source
     │
     ▼
 init_db.py + dbt     ← load into DuckDB, then clean, unify, and aggregate:
-    │                   trees onto H3 hexes (res 6–9) and admin polygons,
+    │                   trees onto H3 cells (res 6–9) and admin polygons,
     │                   with genus histograms, density, and forest cover per cell
     ▼
-build_tiles.py       ← tippecanoe → three scoped layers (hexes, forests, trees)
-                       merged into one berlin_trees.pmtiles.
+build_tiles.py       ← tippecanoe → one PMTiles archive per source (h3
+                       res6-9, admin, forests, trees), bundled into one
+                       berlin_trees.pmtiles.bundle (see docs/pmtiles_bundling.md).
 ```
 
 
@@ -75,7 +76,7 @@ done
 python pipeline/init_db.py
 dbt run --profiles-dir ./dbt --project-dir ./dbt
 
-# 4. Build the PMTiles archive → web/public/berlin_trees.pmtiles
+# 4. Build the PMTiles bundle → web/public/berlin_trees.pmtiles.bundle
 python pipeline/build_tiles.py
 
 # 5. Serve web/ with a static server that supports HTTP range requests
@@ -85,6 +86,3 @@ npx http-server web -p 8000
 
 Then open <http://localhost:8000>.
 
-> DuckDB allows only one connection at a time — close any open connection to
-> `data/berlin_trees.duckdb` (e.g. a Jupyter kernel) before running steps 3–4.
-> To rebuild from scratch, delete `data/berlin_trees.duckdb` first.

@@ -35,7 +35,7 @@ forest_h3 AS (
         WHERE ST_GeometryType(part.geom) = 'POLYGON'
     )
 ),
-hex_geoms AS MATERIALIZED (
+h3_geoms AS MATERIALIZED (
     SELECT
         h3_index,
         ST_Transform(
@@ -48,16 +48,16 @@ hex_geoms AS MATERIALIZED (
         SELECT h3_index FROM forest_h3
     )
 ),
-hex_berlin AS MATERIALIZED (
+h3_berlin AS MATERIALIZED (
     SELECT
         h.h3_index,
         ST_Intersection(h.geom_25833, b.geom) AS berlin_geom,
         ST_Area(ST_Intersection(h.geom_25833, b.geom)) AS berlin_area_m2
-    FROM hex_geoms h
+    FROM h3_geoms h
     CROSS JOIN berlin_boundary b
     WHERE ST_Intersects(h.geom_25833, b.geom)
 ),
-{{ forest_intersections('hex_berlin', 'h3_index', 'berlin_geom') }},
+{{ forest_intersections('h3_berlin', 'h3_index', 'berlin_geom') }},
 tree_agg AS (
     SELECT
         h3_index,
@@ -169,7 +169,7 @@ SELECT
     )                                                                      AS tree_density_km2,
     -- Geometry: standard (lng, lat) WKT from h3_cell_to_boundary_wkt, stored as GEOMETRY
     ST_GeomFromText(h3_cell_to_boundary_wkt(hb.h3_index))                 AS geometry
-FROM hex_berlin hb
+FROM h3_berlin hb
 LEFT JOIN tree_agg t              ON hb.h3_index = t.h3_index
 LEFT JOIN dominant_n d            ON hb.h3_index = d.h3_index
 LEFT JOIN forest_totals ft        ON hb.h3_index = ft.h3_index

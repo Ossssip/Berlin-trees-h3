@@ -81,7 +81,7 @@ body { font-family: sans-serif; }
 #btn-auto.auto-btn:hover { color: #e8e8e8; background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.16); }
 #btn-auto.auto-btn.active { color: #fff; background: rgba(255,255,255,0.13); border-color: rgba(255,255,255,0.22); }
 
-#seg-hex-highlight {
+#seg-h3-highlight {
   position: absolute;
   top: 2px;
   height: calc(100% - 4px);
@@ -152,13 +152,13 @@ body { font-family: sans-serif; }
 .seg-btn.active { color: #fff; }
 .seg-btn.auto-active { color: #bbb; }
 .seg-label { font-size: 16px; }
-.seg-hex {
+.seg-h3 {
   display: inline-block;
   width: 1em; height: 1em;
   background: #3d6e3d;
   clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
 }
-.seg-btn.active .seg-hex { background: #74c476; }
+.seg-btn.active .seg-h3 { background: #74c476; }
 .seg-admin-path { fill: #4a6b3a; }
 .seg-btn.active .seg-admin-path { fill: #b5cf6b; }
 .seg-btn-inner { display: flex; flex-direction: column; align-items: center; gap: 3px; }
@@ -381,17 +381,17 @@ body { font-family: sans-serif; }
 
 /* ---- Row wrappers: transparent to flex on desktop ---- */
 #seg-admin-row,
-#seg-hex-row { display: contents; }
+#seg-h3-row { display: contents; }
 
 /* ---- Forest toggle inside seg-track (desktop) ---- */
-/* Push to end of the flex row: bezirk → ortsteil → hex block → forests */
+/* Push to end of the flex row: bezirk → ortsteil → H3 block → forests */
 #btn-forest-toggle {
   order: 10;
   margin-left: 5px;
 }
 
-/* Small gap between admin and hex blocks on desktop */
-#seg-hex-row > .seg-btn:first-child { margin-left: 5px; }
+/* Small gap between admin and H3 blocks on desktop */
+#seg-h3-row > .seg-btn:first-child { margin-left: 5px; }
 
 /* ---- Mobile layout (≤600px) ---- */
 @media (max-width: 600px) {
@@ -436,7 +436,7 @@ body { font-family: sans-serif; }
   #ctrl-detail-main { display: none; }
   #ctrl-detail.detail-expanded #ctrl-detail-main { display: flex; }
 
-  /* Two-row stack: hex block on top, admin row below */
+  /* Two-row stack: H3 block on top, admin row below */
   #seg-track {
     display: flex;
     flex-direction: column;
@@ -444,7 +444,7 @@ body { font-family: sans-serif; }
     gap: 4px;
   }
 
-  #seg-hex-row {
+  #seg-h3-row {
     display: flex;
     order: 1;
     background: rgba(255, 255, 255, 0.06);
@@ -456,7 +456,7 @@ body { font-family: sans-serif; }
 
   /* JS-computed decorations don't work across rows — hide them */
   #seg-thumb,
-  #seg-hex-highlight { display: none; }
+  #seg-h3-highlight { display: none; }
 
   /* Replicate the thumb highlight directly on the active button */
   .seg-btn.active { background: rgba(255, 255, 255, 0.15); border-radius: 14px; }

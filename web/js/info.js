@@ -9,6 +9,7 @@
 
 import { updateDensityScale } from './layers.js';
 import { getGenusDataUri } from './icons.js';
+import { SOURCE_FOR_LAYER } from './config.js';
 
 // ---------------------------------------------------------------------------
 // State
@@ -114,7 +115,6 @@ function _setInfoState(s) {
 // Hover/selection highlight is fed by querySourceFeatures (reads parsed tile
 // data directly — no setFilter worker round-trip that lagged the outline) into
 // the poly-highlight GeoJSON layer.
-const _SRC = 'berlin-trees';
 const _EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
 // A feature's full geometry as a FeatureCollection. The feature can be split
@@ -124,11 +124,11 @@ function _highlightData(layerId, props) {
   if (!_map || !props) return null;
   const sourceLayer = layerId.replace('-fill', '');
   let filter;
-  if (layerId.startsWith('hexes_res')) filter = ['==', ['get', 'h3_index'], props.h3_index];
+  if (layerId.startsWith('h3_res')) filter = ['==', ['get', 'h3_index'], props.h3_index];
   else if (layerId === 'admin_bezirke-fill' || layerId === 'admin_ortsteile-fill') filter = ['==', ['get', 'area_id'], props.area_id];
   else return null;
 
-  const pieces = _map.querySourceFeatures(_SRC, { sourceLayer, filter });
+  const pieces = _map.querySourceFeatures(SOURCE_FOR_LAYER[sourceLayer], { sourceLayer, filter });
   if (pieces.length <= 1) return { type: 'FeatureCollection', features: pieces };
 
   const pc = window.polygonClipping;
@@ -316,7 +316,7 @@ function renderDatasetCard(summary, phylopicIndex) {
     ${treeSection}${forestSection}`;
 }
 
-function renderHexCard(props, layerType, phylopicIndex, expanded, latched) {
+function renderCellCard(props, layerType, phylopicIndex, expanded, latched) {
   // Count how many genera slots are populated (1–10)
   let totalGenera = 0;
   for (let i = 1; i <= 10; i++) {
@@ -392,7 +392,7 @@ function _highlightFeature(layerId, props, feature) {
 // ---------------------------------------------------------------------------
 
 function _layerType(layerId) {
-  if (layerId.startsWith('hexes_res')) return 'hex';
+  if (layerId.startsWith('h3_res')) return 'h3';
   if (layerId.startsWith('admin_')) return 'admin';
   if (layerId === 'trees-circle') return 'tree';
   return 'unknown';
@@ -487,7 +487,7 @@ function _renderCurrentCard() {
   const { props, type } = _currentCard;
   const phi = _getPhylopicIndex?.() ?? {};
   showCard(
-    type === 'tree' ? renderTreePointCard(props, phi) : renderHexCard(props, type, phi, _expanded, true),
+    type === 'tree' ? renderTreePointCard(props, phi) : renderCellCard(props, type, phi, _expanded, true),
     { showClose: true },
   );
 }
@@ -536,7 +536,7 @@ function _parseSummaryFromTileProps(props) {
 }
 
 function _querySummaryFromTiles() {
-  const features = _map?.querySourceFeatures('berlin-trees', { sourceLayer: 'agg_berlin' });
+  const features = _map?.querySourceFeatures('admin', { sourceLayer: 'agg_berlin' });
   if (!features?.length) return null;
   return _parseSummaryFromTileProps(features[0].properties);
 }
@@ -559,20 +559,20 @@ export function setupInfoCard(map, getPhylopicIndex, { onLatchChange } = {}) {
     if (_densityRanges && _lastColorbarMode != null) updateColorbar(_lastColorbarMode);
   });
 
-  const hexLayers = [
+  const h3Layers = [
     'admin_bezirke-fill', 'admin_ortsteile-fill',
-    'hexes_res6-fill', 'hexes_res7-fill', 'hexes_res8-fill', 'hexes_res9-fill',
+    'h3_res6-fill', 'h3_res7-fill', 'h3_res8-fill', 'h3_res9-fill',
   ];
   const centroidLayers = [6, 7, 8, 9].flatMap(r => [
-    `hexes_res${r}-label-genus`,
-    `hexes_res${r}-icon-trees`,
-    `hexes_res${r}-icon-forest`,
+    `h3_res${r}-label-genus`,
+    `h3_res${r}-icon-trees`,
+    `h3_res${r}-icon-forest`,
   ]);
 
   // Centroid symbol layers intercept pointer events. Resolve them to the
   // underlying fill feature so the card and selection work normally.
   function _resolveCentroidFeature(point) {
-    const hits = map.queryRenderedFeatures(point, { layers: hexLayers });
+    const hits = map.queryRenderedFeatures(point, { layers: h3Layers });
     return hits[0] ?? null;
   }
 
@@ -605,7 +605,7 @@ export function setupInfoCard(map, getPhylopicIndex, { onLatchChange } = {}) {
       _setInfoState('hover');
       requestAnimationFrame(() => {
         if (_state !== 'hover' || _latchedId !== id) return;
-        showCard(renderHexCard(props, type, _getPhylopicIndex?.() ?? {}, _expanded, true));
+        showCard(renderCellCard(props, type, _getPhylopicIndex?.() ?? {}, _expanded, true));
       });
     });
 
@@ -619,7 +619,7 @@ export function setupInfoCard(map, getPhylopicIndex, { onLatchChange } = {}) {
 
     map.on('click', centroidId, (e) => {
       const feature = _resolveCentroidFeature(e.point);
-      if (!feature) return;          // no hex underneath — let the fill handler try
+      if (!feature) return;          // no cell underneath — let the fill handler try
       if (!_claimClick(e)) return;   // the fill handler already handled this tap
       e.preventDefault();
       const props = feature.properties;
@@ -647,7 +647,7 @@ export function setupInfoCard(map, getPhylopicIndex, { onLatchChange } = {}) {
     });
   });
 
-  [...hexLayers, 'trees-circle'].forEach((layerId) => {
+  [...h3Layers, 'trees-circle'].forEach((layerId) => {
     map.on('mousemove', layerId, (e) => {
       if (_state === 'latched') return;
       map.getCanvas().style.cursor = 'pointer';
@@ -667,7 +667,7 @@ export function setupInfoCard(map, getPhylopicIndex, { onLatchChange } = {}) {
         if (_state !== 'hover' || _latchedId !== id) return;
         showCard(type === 'tree'
           ? renderTreePointCard(props, _getPhylopicIndex?.() ?? {})
-          : renderHexCard(props, type, _getPhylopicIndex?.() ?? {}, _expanded, true));
+          : renderCellCard(props, type, _getPhylopicIndex?.() ?? {}, _expanded, true));
       });
     });
 
@@ -710,7 +710,7 @@ export function setupInfoCard(map, getPhylopicIndex, { onLatchChange } = {}) {
   // Click on empty space → unlatch
   map.on('click', (e) => {
     if (_state !== 'latched') return;
-    const hits = map.queryRenderedFeatures(e.point, { layers: [...hexLayers, ...centroidLayers, 'trees-circle'] });
+    const hits = map.queryRenderedFeatures(e.point, { layers: [...h3Layers, ...centroidLayers, 'trees-circle'] });
     if (hits.length === 0) {
       _latchedId = null;
       _currentCard = null;

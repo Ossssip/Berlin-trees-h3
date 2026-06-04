@@ -1,11 +1,11 @@
-import { HEX_COLOR, HEX_ICON_SIZES, ADMIN_ICON_SIZES, HEX_RESOLUTIONS } from './config.js';
+import { H3_COLOR, H3_ICON_SIZES, ADMIN_ICON_SIZES, H3_RESOLUTIONS, SOURCE_NAMES } from './config.js';
 import { buildForestIconImageExpr } from './icons.js';
 
-const HEX_OUTLINE_WIDTH = ['interpolate', ['linear'], ['zoom'], 4, 0.5, 14, 0.5, 15, 0.8, 17, 1.2];
+const H3_OUTLINE_WIDTH = ['interpolate', ['linear'], ['zoom'], 4, 0.5, 14, 0.5, 15, 0.8, 17, 1.2];
 const ADMIN_OUTLINE_WIDTH = (baseWidth) => ['interpolate', ['linear'], ['zoom'], 4, baseWidth, 14, baseWidth, 15, baseWidth + 0.6, 17, baseWidth + 1.2];
 
 // Minimum zoom at which centroid icons appear (step: hidden below, visible at/above)
-const HEX_ICON_MIN_ZOOM  = { 6: 7, 7: 9, 8: 11, 9: 12 };
+const H3_ICON_MIN_ZOOM  = { 6: 7, 7: 9, 8: 11, 9: 12 };
 const ADMIN_ICON_MIN_ZOOM = { bezirke: 8, ortsteile: 9 };
 
 // Density colour ramp — breakpoints expressed as fractions of a configurable max.
@@ -16,7 +16,7 @@ const DENSITY_STOPS_BASE = [0, '#c7e9c0', 0.10, '#74c476', 0.40, '#238b45', 1.0,
 const COLOR_RAMP = [0, '#c7e9c0', 1 / 3, '#74c476', 2 / 3, '#238b45', 1, '#005a32'];
 
 // Quasi-continuous quantile scale: `quantiles` are per-resolution density
-// breakpoints (deciles). The inner interpolate maps a hex's density to its rank
+// breakpoints (deciles). The inner interpolate maps a cell's density to its rank
 // [0,1] via the empirical CDF; the outer maps that rank to the colour ramp.
 export function densityColorExpr(quantiles, p95) {
   const cap = Math.max(p95 || 0, 2);
@@ -54,8 +54,8 @@ const INITIAL_P95 = 2818; // res7 default on load
 
 export function updateDensityScale(map, quantiles, p95) {
   const expr = densityColorExpr(quantiles, p95);
-  for (const resolution of HEX_RESOLUTIONS) {
-    const sl = `hexes_res${resolution}`;
+  for (const resolution of H3_RESOLUTIONS) {
+    const sl = `h3_res${resolution}`;
     try { map.setPaintProperty(`${sl}-fill`, 'fill-color', expr); } catch (_) {}
     try { map.setPaintProperty(`${sl}-label-genus`, 'text-color', expr); } catch (_) {}
   }
@@ -69,8 +69,8 @@ const HAS_TREES = ['!=', ['coalesce', ['get', 'dominant_genus'], ''], ''];
 
 export function updateGenusLabelFilter(map, loadedGenera) {
   const filter = ['all', HAS_TREES, ['!', ['in', ['get', 'dominant_genus'], ['literal', loadedGenera]]]];
-  for (const resolution of HEX_RESOLUTIONS) {
-    try { map.setFilter(`hexes_res${resolution}-label-genus`, filter); } catch (_) {}
+  for (const resolution of H3_RESOLUTIONS) {
+    try { map.setFilter(`h3_res${resolution}-label-genus`, filter); } catch (_) {}
   }
   for (const admin of ['bezirke', 'ortsteile']) {
     try { map.setFilter(`admin_${admin}-label`, filter); } catch (_) {}
@@ -136,7 +136,7 @@ function createHatchPattern(color = '#2a5e30', size = 16, lineWidth = 3) {
 }
 
 // text-size mirrors icon-size × 32 (icon px → CSS px at 2× DPR)
-const HEX_LABEL_SIZES = {
+const H3_LABEL_SIZES = {
   6: ['interpolate', ['exponential', 2], ['zoom'],  6,   1.9, 14, 477],
   7: ['interpolate', ['exponential', 2], ['zoom'],  8,   2.9, 14, 182],
   8: ['interpolate', ['exponential', 2], ['zoom'], 10,   4.3, 14,  68],
@@ -149,7 +149,7 @@ const ADMIN_LABEL_SIZES = {
 // Circle bg: 1.8× the tree-icon size (circle SDF is 32px, icon SDF is 64px,
 // so circle icon-size = tree_icon-size × 1.8 × 2 = tree_icon-size × 3.6 / 2... simplified:
 // text = icon × 32, circle display = text × 1.8, circle icon-size = text × 1.8 / 32 = icon × 1.8)
-const HEX_LABEL_CIRCLE_SIZES = {
+const H3_LABEL_CIRCLE_SIZES = {
   6: ['interpolate', ['exponential', 2], ['zoom'],  6, 0.10, 14, 26.8],
   7: ['interpolate', ['exponential', 2], ['zoom'],  8, 0.16, 14, 10.3],
   8: ['interpolate', ['exponential', 2], ['zoom'], 10, 0.24, 14,  3.8],
@@ -170,20 +170,25 @@ const GENUS_LABEL_FIELD = ['case',
   ['slice', ['upcase', ['coalesce', ['get', 'dominant_genus'], '']], 0, 1],
 ];
 
-export function addMapLayers(map, tilesUrl) {
+// sourceUrls: { res6: 'pmtiles://res6', …, trees: 'pmtiles://trees' } — one
+// vector source per bundle archive (see SOURCE_NAMES). Each layer below points
+// at its archive so MapLibre only fetches the visible resolution's tiles.
+export function addMapLayers(map, sourceUrls) {
   const forestIconImage = buildForestIconImageExpr();
   const initialDensityColor = densityColorExpr(null, INITIAL_P95);
 
   map.addImage('letter-bg', createLetterBg(), { sdf: true });
-  map.addSource('berlin-trees', { type: 'vector', url: tilesUrl });
+  for (const name of SOURCE_NAMES) {
+    map.addSource(name, { type: 'vector', url: sourceUrls[name] });
+  }
 
-  // Pass 1: hex fills only — forest layers inserted after, so they render above fills
-  for (const resolution of HEX_RESOLUTIONS) {
-    const sourceLayer = `hexes_res${resolution}`;
+  // Pass 1: H3 fills only — forest layers inserted after, so they render above fills
+  for (const resolution of H3_RESOLUTIONS) {
+    const sourceLayer = `h3_res${resolution}`;
     map.addLayer({
       id: `${sourceLayer}-fill`,
       type: 'fill',
-      source: 'berlin-trees',
+      source: `res${resolution}`,
       'source-layer': sourceLayer,
       layout: { visibility: resolution === 7 ? 'visible' : 'none' },
       paint: { 'fill-color': initialDensityColor, 'fill-opacity': 0.65 },
@@ -194,38 +199,38 @@ export function addMapLayers(map, tilesUrl) {
   map.addImage('forest-hatch', createHatchPattern('#13321a', 11, 3));
   const forestPattern = 'forest-hatch';
 
-  // Pass 2: hex outlines + centroids
-  for (const resolution of HEX_RESOLUTIONS) {
-    const sourceLayer = `hexes_res${resolution}`;
+  // Pass 2: H3 outlines + centroids
+  for (const resolution of H3_RESOLUTIONS) {
+    const sourceLayer = `h3_res${resolution}`;
     const fcp = ['coalesce', ['get', 'forest_cover_pct'], 0];
     const dualForestBand = ['all', ['>=', fcp, 33], ['<=', fcp, 67]];
-    const minZoom = HEX_ICON_MIN_ZOOM[resolution];
+    const minZoom = H3_ICON_MIN_ZOOM[resolution];
 
     map.addLayer({
       id: `${sourceLayer}-outline`,
       type: 'line',
       ...(resolution >= 8 ? { minzoom: minZoom } : {}),
-      source: 'berlin-trees',
+      source: `res${resolution}`,
       'source-layer': sourceLayer,
       layout: { visibility: resolution === 7 ? 'visible' : 'none' },
-      paint: { 'line-color': '#e8e8e8', 'line-width': HEX_OUTLINE_WIDTH, 'line-opacity': 0.5 },
+      paint: { 'line-color': '#e8e8e8', 'line-width': H3_OUTLINE_WIDTH, 'line-opacity': 0.5 },
     });
 
     map.addLayer({
       id: `${sourceLayer}-label-genus`,
       type: 'symbol',
       minzoom: minZoom,
-      source: 'berlin-trees',
+      source: `res${resolution}`,
       'source-layer': `${sourceLayer}_centroids`,
       filter: HAS_TREES,
       layout: {
         visibility: resolution === 7 ? 'visible' : 'none',
         'icon-image': 'letter-bg',
-        'icon-size': HEX_LABEL_CIRCLE_SIZES[resolution],
+        'icon-size': H3_LABEL_CIRCLE_SIZES[resolution],
         'icon-allow-overlap': true,
         'icon-anchor': 'center',
         'text-field': GENUS_LABEL_FIELD,
-        'text-size': HEX_LABEL_SIZES[resolution],
+        'text-size': H3_LABEL_SIZES[resolution],
         'text-allow-overlap': true,
         'text-anchor': 'center',
         'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
@@ -243,12 +248,12 @@ export function addMapLayers(map, tilesUrl) {
       id: `${sourceLayer}-icon-trees`,
       type: 'symbol',
       minzoom: minZoom,
-      source: 'berlin-trees',
+      source: `res${resolution}`,
       'source-layer': `${sourceLayer}_centroids`,
       layout: {
         visibility: resolution === 7 ? 'visible' : 'none',
         'icon-image': ['get', 'dominant_genus'],
-        'icon-size': HEX_ICON_SIZES[resolution],
+        'icon-size': H3_ICON_SIZES[resolution],
         'icon-allow-overlap': true,
         'icon-offset': ['case', dualForestBand, ['literal', [-32, 0]], ['literal', [0, 0]]],
       },
@@ -262,12 +267,12 @@ export function addMapLayers(map, tilesUrl) {
       id: `${sourceLayer}-icon-forest`,
       type: 'symbol',
       minzoom: minZoom,
-      source: 'berlin-trees',
+      source: `res${resolution}`,
       'source-layer': `${sourceLayer}_centroids`,
       layout: {
         visibility: resolution === 7 ? 'visible' : 'none',
         'icon-image': forestIconImage,
-        'icon-size': HEX_ICON_SIZES[resolution],
+        'icon-size': H3_ICON_SIZES[resolution],
         'icon-allow-overlap': true,
         'icon-offset': ['case', dualForestBand, ['literal', [32, 0]], ['literal', [0, 0]]],
       },
@@ -285,7 +290,7 @@ export function addMapLayers(map, tilesUrl) {
     map.addLayer({
       id: `${sourceLayer}-fill`,
       type: 'fill',
-      source: 'berlin-trees',
+      source: 'admin',
       'source-layer': sourceLayer,
       layout: { visibility: 'none' },
       paint: { 'fill-color': initialDensityColor, 'fill-opacity': 0.65 },
@@ -294,7 +299,7 @@ export function addMapLayers(map, tilesUrl) {
     map.addLayer({
       id: `${sourceLayer}-outline`,
       type: 'line',
-      source: 'berlin-trees',
+      source: 'admin',
       'source-layer': sourceLayer,
       layout: { visibility: 'none' },
       paint: {
@@ -308,7 +313,7 @@ export function addMapLayers(map, tilesUrl) {
       id: `${sourceLayer}-label`,
       type: 'symbol',
       minzoom: adminMinZoom,
-      source: 'berlin-trees',
+      source: 'admin',
       'source-layer': `${sourceLayer}_centroids`,
       filter: HAS_TREES,
       layout: {
@@ -336,7 +341,7 @@ export function addMapLayers(map, tilesUrl) {
       id: `${sourceLayer}-icon`,
       type: 'symbol',
       minzoom: adminMinZoom,
-      source: 'berlin-trees',
+      source: 'admin',
       'source-layer': `${sourceLayer}_centroids`,
       layout: {
         visibility: 'none',
@@ -348,11 +353,11 @@ export function addMapLayers(map, tilesUrl) {
     });
   }
 
-  // Forest layers — on top of all hex/admin fills, outlines and icons
+  // Forest layers — on top of all H3/admin fills, outlines and icons
   map.addLayer({
     id: 'forests-union-fill',
     type: 'fill',
-    source: 'berlin-trees',
+    source: 'forests',
     'source-layer': 'forests_union',
     layout: { visibility: 'visible' },
     paint: {
@@ -364,7 +369,7 @@ export function addMapLayers(map, tilesUrl) {
   map.addLayer({
     id: 'forests-union-outline',
     type: 'line',
-    source: 'berlin-trees',
+    source: 'forests',
     'source-layer': 'forests_union',
     layout: { visibility: 'visible' },
     paint: { 'line-color': '#2a5e30', 'line-width': 1, 'line-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0.8, 15, 0] },
@@ -373,7 +378,7 @@ export function addMapLayers(map, tilesUrl) {
   map.addLayer({
     id: 'forests-fill',
     type: 'fill',
-    source: 'berlin-trees',
+    source: 'forests',
     'source-layer': 'forests',
     layout: { visibility: 'none' },
     paint: {
@@ -385,7 +390,7 @@ export function addMapLayers(map, tilesUrl) {
   map.addLayer({
     id: 'forests-outline',
     type: 'line',
-    source: 'berlin-trees',
+    source: 'forests',
     'source-layer': 'forests',
     layout: { visibility: 'none' },
     paint: { 'line-color': '#2a5e30', 'line-width': 0.8, 'line-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0, 15, 0.6] },
@@ -394,7 +399,7 @@ export function addMapLayers(map, tilesUrl) {
   map.addLayer({
     id: 'berlin-border',
     type: 'line',
-    source: 'berlin-trees',
+    source: 'admin',
     'source-layer': 'berlin_border',
     paint: { 'line-color': '#fff', 'line-width': 1.8, 'line-opacity': 0.5 },
   });
@@ -404,7 +409,7 @@ export function addMapLayers(map, tilesUrl) {
   map.addLayer({
     id: 'berlin-summary',
     type: 'fill',
-    source: 'berlin-trees',
+    source: 'admin',
     'source-layer': 'agg_berlin',
     layout: { visibility: 'none' },
     paint: { 'fill-opacity': 0 },
@@ -413,7 +418,7 @@ export function addMapLayers(map, tilesUrl) {
   map.addLayer({
     id: 'trees-circle',
     type: 'circle',
-    source: 'berlin-trees',
+    source: 'trees',
     'source-layer': 'trees',
     paint: {
       'circle-color': '#2d6a4f',
@@ -458,7 +463,7 @@ export function addMapLayers(map, tilesUrl) {
   // Tree/forest genus silhouettes always render above all other layers
   // (incl. the forest dot pattern, which otherwise sits on top of the fills).
   const silhouetteLayers = [];
-  for (const r of HEX_RESOLUTIONS) silhouetteLayers.push(`hexes_res${r}-icon-trees`, `hexes_res${r}-icon-forest`);
+  for (const r of H3_RESOLUTIONS) silhouetteLayers.push(`h3_res${r}-icon-trees`, `h3_res${r}-icon-forest`);
   for (const a of ['bezirke', 'ortsteile']) silhouetteLayers.push(`admin_${a}-icon`);
   for (const id of silhouetteLayers) {
     try { map.moveLayer(id); } catch (_) {}

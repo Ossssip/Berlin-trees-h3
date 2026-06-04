@@ -16,20 +16,64 @@ const ATTRIBUTION = [
   `Tree silhouettes: <a href="https://www.phylopic.org" target="_blank" rel="noopener">PhyloPic</a>, <a href="${DATA_SOURCES_URL}#tree-silhouettes" target="_blank" rel="noopener">attributions</a>`,
 ];
 
-// Tiles are served from GitHub Pages when it supports byte-range (HTTP 206)
-// requests; otherwise the map falls back to the Cloudflare Worker mirror.
-const WORKER_TILES_URL = 'pmtiles://https://berlin-trees-pmtiles.ossssip.workers.dev/';
+// The tiles ship as one "bundle" file: several independent PMTiles archives
+// (one per resolution / forests / admin / trees) concatenated behind a small
+// header + JSON manifest that records each archive's [offset, length]. The map
+// registers one pmtiles source per archive, each reading the bundle at its own
+// byte offset, so only the visible resolution's tiles are ever fetched.
+//
+// Bundle layout:  "PMBUNDLE"(8) | manifestLen(uint64 BE, 8) | manifest JSON | archives…
+const BUNDLE_MAGIC = 'PMBUNDLE';
+const BUNDLE_HEADER = 16; // magic(8) + manifestLen(8)
 
-async function resolveTilesUrl() {
+// Served from GitHub Pages when it supports byte-range (HTTP 206) requests;
+// otherwise the map falls back to the Cloudflare Worker mirror of the bundle.
+const WORKER_BUNDLE_URL = 'https://berlin-trees-pmtiles.ossssip.workers.dev/';
+
+// A pmtiles Source that maps an archive's internal offsets onto a byte range
+// inside the shared bundle file by adding a fixed base offset to every read.
+class OffsetSource {
+  constructor(name, url, base) { this._name = name; this._url = url; this._base = base; }
+  getKey() { return this._name; }
+  async getBytes(offset, length, signal) {
+    const start = this._base + offset;
+    const end = start + length - 1;
+    const res = await fetch(this._url, { signal, headers: { Range: `bytes=${start}-${end}` } });
+    if (res.status !== 206 && res.status !== 200) throw new Error(`bundle range ${res.status}`);
+    return { data: await res.arrayBuffer() };
+  }
+}
+
+async function readBundleManifest(url) {
+  const head = await fetch(url, { headers: { Range: 'bytes=0-' + (BUNDLE_HEADER - 1) } });
+  if (head.status !== 206) throw new Error('no range support');
+  const buf = new Uint8Array(await head.arrayBuffer());
+  if (new TextDecoder().decode(buf.slice(0, 8)) !== BUNDLE_MAGIC) throw new Error('not a bundle');
+  const dv = new DataView(buf.buffer);
+  const manifestLen = dv.getUint32(8) * 2 ** 32 + dv.getUint32(12); // uint64 BE
+  const manRes = await fetch(url, { headers: { Range: `bytes=${BUNDLE_HEADER}-${BUNDLE_HEADER + manifestLen - 1}` } });
+  const manifest = JSON.parse(new TextDecoder().decode(await manRes.arrayBuffer()));
+  return { manifest, sectionStart: BUNDLE_HEADER + manifestLen };
+}
+
+// Register one pmtiles archive per bundle entry; returns { sourceName: 'pmtiles://name' }.
+async function resolveSources() {
   const pagesHttp = new URL('../public/berlin_trees.pmtiles', import.meta.url).href;
+  let url = pagesHttp;
+  let info;
   try {
-    const res = await fetch(pagesHttp, { headers: { Range: 'bytes=0-6' } });
-    if (res.status === 206) {
-      const magic = new TextDecoder().decode(new Uint8Array(await res.arrayBuffer()));
-      if (magic.startsWith('PMTiles')) return `pmtiles://${pagesHttp}`;
-    }
-  } catch (_) { /* network error — fall back to the worker */ }
-  return WORKER_TILES_URL;
+    info = await readBundleManifest(pagesHttp);
+  } catch (_) {
+    url = WORKER_BUNDLE_URL;
+    info = await readBundleManifest(url);
+  }
+  const sources = {};
+  for (const a of info.manifest.archives) {
+    const p = new pmtiles.PMTiles(new OffsetSource(a.name, url, info.sectionStart + a.offset));
+    protocol.add(p);
+    sources[a.name] = `pmtiles://${a.name}`;
+  }
+  return sources;
 }
 
 const _saved = loadState();
@@ -53,9 +97,9 @@ let phylopicIndex = {};
 const getPhylopicIndex = () => phylopicIndex;
 
 map.on('load', async () => {
-  const tilesUrl = await resolveTilesUrl();
+  const sources = await resolveSources();
 
-  addMapLayers(map, tilesUrl);
+  addMapLayers(map, sources);
 
   loadPhylopicIndex()
     .then((index) => {
@@ -78,7 +122,6 @@ map.on('load', async () => {
   setupInfoCard(map, getPhylopicIndex, {
     onLatchChange: (latchState) => saveState({ latched: latchState }),
   });
-  if (_saved.forestEnabled === false) setForestEnabled(false);
 
   // onModeChange: the colorbar/scale is handled by the resolution-change callback
   // above (which knows the resolved resolution, e.g. auto → res7/8/9).
@@ -89,8 +132,8 @@ map.on('load', async () => {
 
   setupControls(map, setActiveMode, getActiveMode, onModeChange, {
     mode: 'auto',
-    forestEnabled: _saved.forestEnabled,
-    onForestChange: (enabled) => { saveState({ forestEnabled: enabled }); setForestEnabled(enabled); },
+    // Forests are always enabled on load (the toggle no longer persists).
+    onForestChange: (enabled) => { setForestEnabled(enabled); },
   });
 
   // Save position on every pan/zoom end

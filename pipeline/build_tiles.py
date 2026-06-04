@@ -1,21 +1,28 @@
 """
 pipeline/build_tiles.py
 -----------------------
-Convert dbt mart tables in berlin_trees.duckdb into a single PMTiles file.
+Convert dbt mart tables in berlin_trees.duckdb into a single PMTiles *bundle*.
 
-Strategy: build separate pmtiles files with scoped zoom ranges, then
-merge them with tile-join into one berlin_trees.pmtiles.
+Strategy: tippecanoe each band, then re-pack into one independent PMTiles
+archive per source (res6–res9, admin, forests, trees) and concatenate the
+archives behind a header + JSON manifest. The web client registers one MapLibre
+source per archive and only byte-range-fetches the visible resolution's tiles.
 
-    hexes          (agg_h3_res6–9 + agg_bezirke/ortsteile)  z4–z17
+    res6..res9     (agg_h3_res{6..9} + centroids)            z4–z17
+    admin          (bezirke/ortsteile + border + summary)    z4–z17
     forests        (agg_forests + agg_forest_union)          z4–z17
     trees          (int_trees_unified)                       z6–z17
+
+Bundle layout:  "PMBUNDLE"(8) | manifestLen(uint64 BE, 8) | manifest JSON | archives…
 
 Run:
     conda run -n berlin_trees python pipeline/build_tiles.py
 """
 
+import json
 import logging
 import shutil
+import struct
 import subprocess
 import tempfile
 import time
@@ -28,7 +35,7 @@ import duckdb
 DB_PATH = Path("data/berlin_trees.duckdb")
 TILES_INPUT = Path("data/tiles_input")
 WEB_PUBLIC = Path("web/public")
-OUT_PMTILES = WEB_PUBLIC / "berlin_trees.pmtiles"
+OUT_PMTILES = WEB_PUBLIC / "berlin_trees.pmtiles.bundle"
 ATTRIBUTION = "Senatsverwaltung Berlin (dl-de/zero-2-0), Grün Berlin GmbH (dl-de/by-2-0)"
 
 # Columns to retain in the individual-tree layer (keeps tile size down).
@@ -188,6 +195,55 @@ def tippecanoe(
         _run(cmd)
 
 
+def tile_join(output: Path, inputs: list[Path], only_layers: list[str] | None = None) -> None:
+    """Merge/extract source-layers into one PMTiles archive with tile-join."""
+    cmd = [
+        "tile-join",
+        "--output",
+        str(output),
+        "--force",
+        "--no-tile-size-limit",
+        "--attribution",
+        ATTRIBUTION,
+    ]
+    for layer in only_layers or []:
+        cmd.extend(["-l", layer])
+    cmd.extend(str(p) for p in inputs)
+    with _timed(f"tile-join {output.name}"):
+        _run(cmd)
+
+
+# The web client expects the tiles as a single "bundle" file: each entry below is
+# tiled into its own PMTiles archive and the archives are concatenated behind a
+# header + JSON manifest. MapLibre then registers one source per archive (the
+# `name` doubles as the source id) and only byte-range-fetches the visible ones.
+BUNDLE_MAGIC = b"PMBUNDLE"  # 8 bytes; followed by uint64-BE manifest length
+
+
+def write_bundle(out_path: Path, archives: list[tuple[str, Path]]) -> None:
+    """Concatenate archive files behind  MAGIC | manifestLen(u64 BE) | manifest | data.
+
+    Manifest offsets are relative to the start of the data section, so they don't
+    depend on the manifest's own (variable) length.
+    """
+    entries = []
+    offset = 0
+    for name, path in archives:
+        size = path.stat().st_size
+        entries.append({"name": name, "offset": offset, "length": size})
+        offset += size
+    manifest = json.dumps({"version": 1, "archives": entries}, separators=(",", ":")).encode()
+
+    with open(out_path, "wb") as out:
+        out.write(BUNDLE_MAGIC)
+        out.write(struct.pack(">Q", len(manifest)))
+        out.write(manifest)
+        for _name, path in archives:
+            with open(path, "rb") as src:
+                shutil.copyfileobj(src, out)
+    log.info("Bundle manifest: %s", manifest.decode())
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -236,7 +292,7 @@ def main() -> None:
         "Berlin city border",
     )
 
-    # Hex centroid point layers
+    # H3 centroid point layers
     for res in [6, 7, 8, 9]:
         table_centroids_to_flatgeobuf(
             con, f"agg_h3_res{res}", TILES_INPUT / f"h3_res{res}_centroids.fgb"
@@ -250,30 +306,28 @@ def main() -> None:
     # --- 3. tippecanoe: all bands in parallel ---------------------------------
     tmp_dir = Path(tempfile.mkdtemp(prefix="bt_tiles_", dir="/dev/shm"))
     try:
-        hexes_pmtiles = tmp_dir / "hexes.pmtiles"
-        hex_centroids_pmtiles = tmp_dir / "hex_centroids.pmtiles"
+        h3_pmtiles = tmp_dir / "h3.pmtiles"
+        h3_centroids_pmtiles = tmp_dir / "h3_centroids.pmtiles"
         admin_pmtiles = tmp_dir / "admin.pmtiles"
         admin_centroids_pmtiles = tmp_dir / "admin_centroids.pmtiles"
         forests_pmtiles = tmp_dir / "forests.pmtiles"
         trees_pmtiles = tmp_dir / "trees.pmtiles"
 
         tippecanoe_jobs = {
-            "hexes": lambda: tippecanoe(
-                hexes_pmtiles,
+            "h3": lambda: tippecanoe(
+                h3_pmtiles,
                 min_zoom=4,
                 max_zoom=17,
-                layers=[
-                    (f"hexes_res{res}", TILES_INPUT / f"h3_res{res}.fgb") for res in [6, 7, 8, 9]
-                ],
+                layers=[(f"h3_res{res}", TILES_INPUT / f"h3_res{res}.fgb") for res in [6, 7, 8, 9]],
                 extra=["--no-tile-size-limit", "--no-tile-stats"],
                 read_parallel=True,
             ),
-            "hex_centroids": lambda: tippecanoe(
-                hex_centroids_pmtiles,
+            "h3_centroids": lambda: tippecanoe(
+                h3_centroids_pmtiles,
                 min_zoom=4,
                 max_zoom=17,
                 layers=[
-                    (f"hexes_res{res}_centroids", TILES_INPUT / f"h3_res{res}_centroids.fgb")
+                    (f"h3_res{res}_centroids", TILES_INPUT / f"h3_res{res}_centroids.fgb")
                     for res in [6, 7, 8, 9]
                 ],
                 extra=[
@@ -355,34 +409,51 @@ def main() -> None:
                 except Exception as exc:
                     raise RuntimeError(f"tippecanoe job '{name}' failed") from exc
 
-        # Fix capitalised Null in tippecanoe JSON metadata before tile-join reads it
-
-        # --- 4. tile-join: merge all bands into one pmtiles -------------------
-        assembled_pmtiles = tmp_dir / OUT_PMTILES.name
-        log.info("Merging with tile-join in tmpfs → %s", assembled_pmtiles)
-        with _timed("tile-join berlin_trees.pmtiles"):
-            _run(
-                [
-                    "tile-join",
-                    "--output",
-                    str(assembled_pmtiles),
-                    "--force",
-                    "--no-tile-size-limit",
-                    "--attribution",
-                    ATTRIBUTION,
-                    str(hexes_pmtiles),
-                    str(hex_centroids_pmtiles),
-                    str(admin_pmtiles),
-                    str(admin_centroids_pmtiles),
-                    str(forests_pmtiles),
-                    str(trees_pmtiles),
-                ]
+        # --- 4. tile-join: one PMTiles archive per source -------------------
+        # Each archive becomes an independent MapLibre source so the map only
+        # fetches the tiles of the resolution/layer currently displayed.
+        archive_dir = tmp_dir / "archives"
+        archive_dir.mkdir()
+        archive_jobs = {}
+        for res in [6, 7, 8, 9]:
+            archive_jobs[f"res{res}"] = lambda res=res: tile_join(
+                archive_dir / f"res{res}.pmtiles",
+                [h3_pmtiles, h3_centroids_pmtiles],
+                only_layers=[f"h3_res{res}", f"h3_res{res}_centroids"],
             )
+        archive_jobs["admin"] = lambda: tile_join(
+            archive_dir / "admin.pmtiles", [admin_pmtiles, admin_centroids_pmtiles]
+        )
+        archive_jobs["forests"] = lambda: tile_join(
+            archive_dir / "forests.pmtiles", [forests_pmtiles]
+        )
+        archive_jobs["trees"] = lambda: tile_join(archive_dir / "trees.pmtiles", [trees_pmtiles])
+
+        log.info("Building %d per-source PMTiles archives ...", len(archive_jobs))
+        with (
+            _timed("tile-join (all archives)"),
+            ThreadPoolExecutor(max_workers=len(archive_jobs)) as executor,
+        ):
+            futures = {executor.submit(fn): name for name, fn in archive_jobs.items()}
+            for future in as_completed(futures):
+                name = futures[future]
+                try:
+                    future.result()
+                except Exception as exc:
+                    raise RuntimeError(f"tile-join archive '{name}' failed") from exc
+
+        # --- 5. Concatenate archives into the single bundle file -------------
+        # Order = registration order in the client; res6..9 first, then overlays.
+        bundle_order = ["res6", "res7", "res8", "res9", "admin", "forests", "trees"]
+        archives = [(name, archive_dir / f"{name}.pmtiles") for name in bundle_order]
+        assembled = tmp_dir / OUT_PMTILES.name
+        with _timed("write bundle"):
+            write_bundle(assembled, archives)
 
         final_copy_tmp = OUT_PMTILES.with_name(f"{OUT_PMTILES.name}.tmp")
-        with _timed(f"Copy final PMTiles to {OUT_PMTILES}"):
+        with _timed(f"Copy final bundle to {OUT_PMTILES}"):
             WEB_PUBLIC.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(assembled_pmtiles, final_copy_tmp)
+            shutil.copy2(assembled, final_copy_tmp)
             final_copy_tmp.replace(OUT_PMTILES)
             OUT_PMTILES.with_name(f"{OUT_PMTILES.name}-journal").unlink(missing_ok=True)
 
